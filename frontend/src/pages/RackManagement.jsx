@@ -1,0 +1,1 @@
+export default function RackManagement(){return <div>RackManagement</div>}

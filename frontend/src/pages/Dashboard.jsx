@@ -1,0 +1,1 @@
+export default function Dashboard(){return <main style={{padding:40}}><h1>BrewSmart Dashboard</h1><p>AI-Based Smart Tea Warehouse Management & Optimization System</p></main>}

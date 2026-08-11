@@ -1,0 +1,1 @@
+export default function LocationInquiry(){return <div>LocationInquiry</div>}

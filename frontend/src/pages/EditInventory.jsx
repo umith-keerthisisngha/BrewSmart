@@ -1,0 +1,1 @@
+export default function EditInventory(){return <div>EditInventory</div>}

@@ -1,0 +1,1 @@
+export default function StockMovement(){return <div>StockMovement</div>}

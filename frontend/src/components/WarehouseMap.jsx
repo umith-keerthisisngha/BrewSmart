@@ -1,0 +1,1 @@
+export default function WarehouseMap(){return null}
