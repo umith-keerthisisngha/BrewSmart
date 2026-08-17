@@ -1,0 +1,482 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+.login-page {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  background-image: url('../assets/tea-background.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+
+  color: #fff;
+}
+
+.login-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    rgba(0, 0, 0, 0.45),
+    rgba(0, 0, 0, 0.65)
+  );
+  pointer-events: none;
+}
+
+/* =========================================
+   Container
+========================================= */
+
+.login-container {
+  position: relative;
+  z-index: 5;
+
+  width: 100%;
+  max-width: 520px;
+
+  padding: 40px 25px 25px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* =========================================
+   Brand
+========================================= */
+
+.brand {
+  text-align: center;
+  margin-bottom: 38px;
+}
+
+.leaf-logo {
+  width: 58px;
+  height: 58px;
+
+  margin: 0 auto 5px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.leaf-logo svg {
+  width: 52px;
+  height: 52px;
+
+  fill: none;
+  stroke: #6baa2e;
+
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.brand h1 {
+  margin: 0;
+
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+
+.brand h1 span {
+  color: #6baa2e;
+}
+
+.brand p {
+  margin: 13px 0 0;
+
+  color: #a8aca8;
+
+  font-size: 15px;
+  letter-spacing: 0.1px;
+}
+
+/* =========================================
+   Login Card
+========================================= */
+
+.login-card {
+  width: 100%;
+
+  padding: 40px;
+
+  background: rgba(16, 21, 16, 0.82);
+
+  border: 1px solid rgba(125, 135, 125, 0.25);
+
+  border-radius: 15px;
+
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+
+  box-shadow:
+    0 25px 70px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* =========================================
+   Form
+========================================= */
+
+.form-group {
+  margin-bottom: 25px;
+}
+
+.form-group label {
+  display: block;
+
+  margin-bottom: 9px;
+
+  font-size: 12px;
+  font-weight: 700;
+
+  letter-spacing: 1px;
+
+  color: #c7cbc7;
+}
+
+/* =========================================
+   Input
+========================================= */
+
+.input-wrapper {
+  height: 49px;
+
+  display: flex;
+  align-items: center;
+
+  position: relative;
+
+  border: 1px solid rgba(120, 130, 120, 0.24);
+
+  border-radius: 9px;
+
+  background: rgba(28, 34, 28, 0.75);
+
+  transition: all 0.25s ease;
+}
+
+.input-wrapper:focus-within,
+.input-wrapper.active {
+  border-color: #6baa2e;
+
+  box-shadow:
+    0 0 0 1px rgba(107, 170, 46, 0.15);
+}
+
+.input-icon {
+  width: 47px;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  flex-shrink: 0;
+}
+
+.input-icon svg {
+  width: 20px;
+  height: 20px;
+
+  fill: none;
+
+  stroke: #858b85;
+
+  stroke-width: 1.8;
+
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.input-wrapper.active .input-icon svg {
+  stroke: #6baa2e;
+}
+
+.input-wrapper input {
+  width: 100%;
+  height: 100%;
+
+  border: none;
+  outline: none;
+
+  background: transparent;
+
+  color: #fff;
+
+  font-size: 14px;
+}
+
+.input-wrapper input::placeholder {
+  color: #737973;
+}
+
+.password-toggle {
+  width: 45px;
+  height: 100%;
+
+  border: none;
+  background: transparent;
+
+  cursor: pointer;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.password-toggle svg {
+  width: 20px;
+  height: 20px;
+
+  fill: none;
+
+  stroke: #858b85;
+
+  stroke-width: 1.8;
+
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.password-toggle:hover svg {
+  stroke: #6baa2e;
+}
+
+/* =========================================
+   Remember / Forgot
+========================================= */
+
+.login-options {
+  display: flex;
+
+  justify-content: space-between;
+  align-items: center;
+
+  margin-top: 3px;
+  margin-bottom: 30px;
+}
+
+.remember {
+  display: flex;
+  align-items: center;
+
+  gap: 8px;
+
+  color: #d3d5d3;
+
+  font-size: 13px;
+
+  cursor: pointer;
+}
+
+.remember input {
+  display: none;
+}
+
+.custom-checkbox {
+  width: 18px;
+  height: 18px;
+
+  border-radius: 4px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #6baa2e;
+
+  color: white;
+
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.forgot-password {
+  border: none;
+  background: none;
+
+  color: #6baa2e;
+
+  font-size: 13px;
+
+  cursor: pointer;
+
+  padding: 0;
+}
+
+.forgot-password:hover {
+  color: #83c53d;
+  text-decoration: underline;
+}
+
+/* =========================================
+   Login Button
+========================================= */
+
+.login-button {
+  width: 100%;
+  height: 51px;
+
+  border: none;
+  border-radius: 8px;
+
+  background: #6baa2e;
+
+  color: #fff;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  letter-spacing: 0.5px;
+
+  cursor: pointer;
+
+  transition:
+    transform 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.login-button:hover {
+  background: #79b936;
+
+  transform: translateY(-1px);
+
+  box-shadow:
+    0 8px 25px rgba(107, 170, 46, 0.25);
+}
+
+.login-button:active {
+  transform: translateY(0);
+}
+
+/* =========================================
+   Footer
+========================================= */
+
+.login-footer {
+  margin-top: 40px;   /* was 195px */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: #929792;
+  font-size: 11px;
+  text-align: center;
+}
+
+.footer-icon {
+  color: #6baa2e;
+  font-size: 13px;
+}
+
+.footer-divider {
+  color: #676c67;
+}
+
+.footer-green {
+  color: #6baa2e;
+}
+
+/* =========================================
+   Steam Decoration
+========================================= */
+
+.steam {
+  position: absolute;
+
+  width: 150px;
+  height: 300px;
+
+  border-radius: 50%;
+
+  filter: blur(20px);
+
+  opacity: 0.08;
+
+  pointer-events: none;
+}
+
+.steam-one {
+  right: 21%;
+  top: 3%;
+
+  border-left: 3px solid #fff;
+
+  transform: rotate(15deg);
+}
+
+.steam-two {
+  right: 26%;
+  top: 9%;
+
+  border-right: 3px solid #fff;
+
+  transform: rotate(-20deg);
+}
+
+/* =========================================
+   Responsive
+========================================= */
+
+@media (max-width: 600px) {
+
+  .login-container {
+    padding: 25px 18px;
+  }
+
+  .brand {
+    margin-bottom: 25px;
+  }
+
+  .brand h1 {
+    font-size: 26px;
+  }
+
+  .brand p {
+    font-size: 13px;
+  }
+
+  .login-card {
+    padding: 27px 22px;
+  }
+
+  .login-footer {
+    margin-top: 45px;
+  }
+}
+
+@media (max-height: 750px) {
+
+  .login-container {
+    padding-top: 20px;
+  }
+
+  .brand {
+    margin-bottom: 20px;
+  }
+
+  .login-footer {
+    margin-top: 35px;
+  }
+}
