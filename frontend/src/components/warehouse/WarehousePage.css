@@ -1,0 +1,311 @@
+/* Shared "work area" styling for warehousing sub-pages.
+   Dark navbar (from WarehouseHeader.css) + light content area,
+   matching the tbBOSS-style back-office screens. */
+
+.wp-page {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+  width: 100%;
+  background: #050705;
+}
+
+.wp-content {
+  background: #eef0ee;
+  min-height: 75vh;
+  padding: 28px 34px 50px;
+}
+
+.wp-breadcrumb {
+  font-size: 12px;
+  color: #6b756b;
+  margin: 0 0 16px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.wp-breadcrumb span.wp-crumb-current {
+  color: #2c332c;
+}
+
+.wp-panel {
+  background: #fff;
+  border: 1px solid #dfe3df;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  margin-bottom: 22px;
+}
+
+.wp-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: #f4f6f4;
+  border-bottom: 1px solid #dfe3df;
+  border-radius: 6px 6px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #232823;
+}
+
+.wp-panel-header .wp-icon {
+  color: #2c332c;
+  font-size: 15px;
+}
+
+.wp-panel-body {
+  padding: 20px;
+}
+
+.wp-field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.wp-field-row:last-child {
+  margin-bottom: 0;
+}
+
+.wp-field-label {
+  min-width: 90px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #444a44;
+}
+
+.wp-select,
+.wp-input {
+  flex: 1;
+  min-width: 160px;
+  padding: 9px 12px;
+  font-size: 13px;
+  border: 1px solid #c7cdc7;
+  border-radius: 4px;
+  background: #fff;
+  color: #232823;
+  outline: none;
+}
+
+.wp-select:focus,
+.wp-input:focus {
+  border-color: #6baa2e;
+  box-shadow: 0 0 0 3px rgba(107, 170, 46, 0.12);
+}
+
+.wp-btn {
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding: 9px 22px;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.wp-btn:hover {
+  filter: brightness(1.08);
+}
+
+.wp-btn:active {
+  transform: translateY(1px);
+}
+
+.wp-btn-primary {
+  background: #4a9c1e;
+  color: #fff;
+}
+
+.wp-btn-danger {
+  background: #d9433f;
+  color: #fff;
+}
+
+.wp-btn-neutral {
+  background: #6a7370;
+  color: #fff;
+}
+
+.wp-btn-outline {
+  background: #fff;
+  color: #2c332c;
+  border: 1px solid #c7cdc7;
+}
+
+.wp-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* Table */
+.wp-table-wrap {
+  overflow-x: auto;
+}
+
+.wp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.wp-table thead th {
+  background: #eef2ee;
+  color: #3a413a;
+  text-align: left;
+  font-weight: 700;
+  padding: 10px 12px;
+  border-bottom: 1px solid #dfe3df;
+  white-space: nowrap;
+}
+
+.wp-table tbody td {
+  padding: 9px 12px;
+  border-bottom: 1px solid #edf0ed;
+  color: #2c332c;
+}
+
+.wp-table tbody tr:hover {
+  background: #f7faf7;
+}
+
+.wp-table-empty {
+  text-align: center;
+  padding: 30px 10px;
+  color: #8a918a;
+  font-size: 13px;
+}
+
+/* Tabs */
+.wp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  background: #e4e8e4;
+  border: 1px solid #dfe3df;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+}
+
+.wp-tab {
+  padding: 11px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a504a;
+  cursor: pointer;
+  border-right: 1px solid #dfe3df;
+}
+
+.wp-tab:hover {
+  background: #d9ded9;
+}
+
+.wp-tab.wp-tab-active {
+  background: #fff;
+  color: #4a9c1e;
+}
+
+/* Legend chips (bin/rack view) */
+.wp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.wp-legend-chip {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* Grid / rack view */
+.wp-grid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.wp-rack-grid-wrap {
+  overflow-x: auto;
+  border: 1px solid #dfe3df;
+  border-radius: 4px;
+}
+
+.wp-rack-grid {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 760px;
+}
+
+.wp-rack-grid th {
+  background: #4a8ba0;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 6px;
+  text-align: center;
+  border: 1px solid #3f7a8d;
+}
+
+.wp-rack-grid td {
+  border: 1px solid #dfe3df;
+  text-align: center;
+  padding: 0;
+}
+
+.wp-rack-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2c332c;
+  cursor: pointer;
+  min-width: 62px;
+}
+
+.wp-cell-empty { background: #fff; color: #b7bcb7; }
+.wp-cell-uncatalogued { background: #63d84a; color: #113a08; }
+.wp-cell-catalogued { background: #3f8f2f; color: #fff; }
+.wp-cell-sold { background: #e64b46; color: #fff; }
+.wp-cell-inactive { background: #4d534d; color: #fff; }
+.wp-cell-allocated { background: #33c1e6; color: #08303a; }
+
+.wp-level-label {
+  background: #eef2ee;
+  font-weight: 800;
+  color: #3a413a;
+  padding: 8px 6px;
+  border: 1px solid #dfe3df;
+  min-width: 44px;
+}
+
+/* Info banner used when a listing/form is a lighter-weight page */
+.wp-hint {
+  font-size: 12px;
+  color: #6b756b;
+  margin-top: 10px;
+}
+
+@media (max-width: 700px) {
+  .wp-content {
+    padding: 18px 14px 40px;
+  }
+  .wp-field-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .wp-field-label {
+    min-width: 0;
+  }
+}

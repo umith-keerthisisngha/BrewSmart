@@ -1,0 +1,84 @@
+.rpt-select-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+}
+
+.rpt-select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  font-size: 13px;
+  border: 1px solid #c7cdc7;
+  border-radius: 4px;
+  background: #fff;
+  color: #232823;
+  cursor: pointer;
+}
+
+.rpt-select-trigger:hover {
+  border-color: #9aa39a;
+}
+
+.rpt-caret {
+  color: #6b756b;
+  font-size: 11px;
+}
+
+.rpt-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+
+  max-height: 320px;
+  overflow-y: auto;
+
+  background: #fff;
+  border: 1px solid #c7cdc7;
+  border-radius: 4px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+}
+
+.rpt-select-option {
+  padding: 9px 14px;
+  font-size: 13px;
+  color: #2c332c;
+  cursor: pointer;
+}
+
+.rpt-select-option:hover {
+  background: #eef2ee;
+}
+
+.rpt-select-option-active {
+  background: #4a9c1e;
+  color: #fff;
+}
+
+.rpt-select-placeholder {
+  color: #8a918a;
+  font-style: italic;
+  border-bottom: 1px solid #edf0ed;
+}
+
+.rpt-pdf-btn {
+  background: #1f6f3d;
+  border: 1px solid #1f6f3d;
+  color: #fff;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rpt-pdf-btn:hover:not(:disabled) {
+  background: #185b32;
+  border-color: #185b32;
+}
+
+.rpt-pdf-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

@@ -1,1 +1,1 @@
-<?php header("Content-Type: application/json"); echo json_encode(["system"=>"BrewSmart","status"=>"running"]); ?>
+<?php require __DIR__.'/_endpoint.php';

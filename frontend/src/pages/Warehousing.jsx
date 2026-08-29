@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { WarehouseHeader, WarehouseFooter } from "../components/warehouse/WarehouseHeader";
+import "../components/warehouse/WarehouseHeader.css";
 import "./Warehousing.css";
 
 export default function Warehousing() {
@@ -24,54 +26,11 @@ export default function Warehousing() {
       .finally(() => setLoading(false));
   }, [navigate]);
 
-  const handleLogout = async () => {
-    await axios.post(
-      "http://localhost/BrewSmart/backend/api/auth/logout.php",
-      {},
-      { withCredentials: true }
-    );
-    navigate("/login");
-  };
-
   if (loading) return null;
 
   return (
     <div className="wh-page">
-      {/* Top Navbar */}
-      <header className="wh-navbar">
-        <div className="wh-brand">
-          <div className="wh-leaf-logo">
-            <svg viewBox="0 0 64 64">
-              <path d="M49 8C29 10 15 20 15 36c0 9 6 16 15 16 16 0 25-16 19-44Z" />
-              <path d="M14 54C25 42 33 32 47 20" />
-            </svg>
-          </div>
-          <span className="wh-brand-text">
-            Brew<span>Smart</span>
-          </span>
-        </div>
-
-        <div className="wh-navbar-right">
-          <div className="wh-user-info">
-            <span className="wh-logged-label">Logged in as</span>
-            <span className="wh-user-name">{displayName}</span>
-          </div>
-          <button className="wh-logout-button" onClick={handleLogout}>
-            ⏻ LOGOUT
-          </button>
-        </div>
-      </header>
-
-      {/* Nav Links */}
-      <nav className="wh-nav-links">
-        <span onClick={() => navigate("/warehousing/bin-operation")}>
-          BIN OPERATION
-        </span>
-        <span onClick={() => navigate("/warehousing/reports")}>REPORTS</span>
-        <span onClick={() => navigate("/warehousing/inquiry")}>INQUIRY</span>
-        <span onClick={() => navigate("/warehousing/master")}>MASTER</span>
-        <span className="active">HOME</span>
-      </nav>
+      <WarehouseHeader displayName={displayName} active="home" />
 
       {/* Background photo section */}
       <div className="wh-content">
@@ -116,17 +75,7 @@ export default function Warehousing() {
         </div>
       </div>
 
-      {/* Footer */}
-      <footer className="wh-footer">
-        <div className="wh-footer-title">
-          <span className="wh-footer-icon">🍃</span>
-          <span>BrewSmart Tea Warehouse Management System</span>
-        </div>
-        <p className="wh-copyright">
-          Copyright © 2026 {displayName} All Rights Reserved.
-        </p>
-        <p className="wh-legal">User Agreement, Privacy and Cookies.</p>
-      </footer>
+      <WarehouseFooter displayName={displayName} />
     </div>
   );
 }

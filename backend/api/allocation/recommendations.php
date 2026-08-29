@@ -1,1 +1,6 @@
-<?php // BrewSmart API endpoint ?>
+<?php
+
+
+
+define('BREWSMART_ACTION', 'recommend');
+require __DIR__ . '/../_endpoint.php';
