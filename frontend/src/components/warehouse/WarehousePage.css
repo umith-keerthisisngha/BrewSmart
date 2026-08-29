@@ -309,3 +309,269 @@
     min-width: 0;
   }
 }
+
+/* =====================================================================
+   BrewSmart unified operations UI
+   Keeps all warehousing screens on one compact visual language.
+   ===================================================================== */
+.wp-content {
+  background: #f4f5f4;
+  padding: 24px 28px 44px;
+}
+
+.wp-panel {
+  border-radius: 3px;
+  border-color: #d7dcd7;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+
+.wp-panel-header {
+  border-radius: 3px 3px 0 0;
+  background: #f3f4f3;
+  min-height: 48px;
+  padding: 12px 18px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.wp-panel-body { padding: 16px 18px 18px; }
+
+.wp-input,
+.wp-select {
+  height: 34px;
+  padding: 6px 9px;
+  border-radius: 3px;
+  border-color: #cbd1cb;
+  font-size: 12px;
+  background: #fff;
+}
+
+.wp-input:focus,
+.wp-select:focus {
+  border-color: #5d9e2d;
+  box-shadow: 0 0 0 2px rgba(93,158,45,.11);
+}
+
+.wp-readonly {
+  background: #f0f2f0 !important;
+  color: #495149;
+}
+
+.wp-btn {
+  min-height: 36px;
+  border-radius: 3px;
+  padding: 8px 18px;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.wp-btn-info { background: #4ba4d0; color: #fff; }
+.wp-btn-warning { background: #efaa3a; color: #fff; }
+
+.wp-table {
+  font-size: 11.5px;
+  border: 1px solid #d8ddd8;
+}
+.wp-table thead th {
+  background: linear-gradient(#f1f3f1,#e4e7e4);
+  color: #444b44;
+  padding: 7px 8px;
+  border: 1px solid #d3d8d3;
+  text-align: center;
+  font-weight: 700;
+}
+.wp-table tbody td {
+  padding: 7px 8px;
+  border: 1px solid #e2e6e2;
+  text-align: center;
+}
+.wp-table-empty { padding: 14px !important; }
+
+.wp-entry-screen { display: flex; flex-direction: column; gap: 10px; }
+
+.wp-entry-strip {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 10px;
+  border: 1px solid #d6dbd6;
+  background: #fafbfa;
+}
+.wp-entry-strip > div:first-child { display: flex; align-items: center; gap: 10px; }
+.wp-entry-strip-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #747d74;
+  letter-spacing: .06em;
+}
+.wp-entry-strip strong { font-size: 12px; color: #2b332b; }
+.wp-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid #c8d8bd;
+  background: #edf5e8;
+  color: #3c7427;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.wp-form-section {
+  border: 1px solid #d7dcd7;
+  background: #fff;
+}
+.wp-form-section-title {
+  padding: 7px 10px;
+  background: linear-gradient(#f2f3f2,#e5e7e5);
+  border-bottom: 1px solid #d3d8d3;
+  color: #333a33;
+  font-size: 12px;
+  font-weight: 800;
+}
+.wp-form-section-body { padding: 12px 10px; }
+.wp-title-with-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wp-title-with-meta small { font-size: 10px; color: #737b73; font-weight: 600; }
+
+.wp-entry-grid { display: grid; gap: 8px 10px; }
+.wp-entry-grid-4 { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.wp-span-2 { grid-column: span 2; }
+.wp-span-3 { grid-column: span 3; }
+.wp-span-4 { grid-column: span 4; }
+
+.wp-inline-field {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  height: 34px;
+}
+.wp-inline-label {
+  flex: 0 0 auto;
+  min-width: 92px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid #cbd1cb;
+  border-right: 0;
+  border-radius: 3px 0 0 3px;
+  background: #eceeec;
+  color: #565e56;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wp-inline-control { flex: 1; min-width: 0; display: flex; }
+.wp-inline-control .wp-input,
+.wp-inline-control .wp-select {
+  width: 100%;
+  min-width: 0;
+  border-radius: 0 3px 3px 0;
+}
+
+.wp-checkbox-line {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 0 6px;
+  color: #454d45;
+  font-size: 11px;
+}
+.wp-checkbox-line label,
+.wp-checkbox-strong { display: flex; align-items: center; gap: 6px; }
+.wp-checkbox-strong { font-size: 12px; font-weight: 700; color: #374037; }
+
+.wp-total-input { font-weight: 800; color: #2d6e2d; }
+
+.wp-location-command {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-height: 38px;
+}
+.wp-ai-inline { font-size: 11.5px; font-weight: 700; color: #667066; }
+.wp-ai-success { color: #167138; }
+.wp-ai-error { color: #b62e28; }
+
+.wp-ai-section { border-color: #b9d1a9; }
+.wp-ai-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.wp-ai-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: #f6f8f5;
+  border: 1px solid #dce3d8;
+  font-size: 11px;
+  color: #596159;
+}
+.wp-ai-summary-row strong.ok { color: #217038; }
+.wp-ai-summary-row strong.warn { color: #a65d13; }
+.wp-compact-table-wrap { max-height: 250px; overflow: auto; }
+
+.wp-entry-detail-section { margin-top: 2px; }
+.wp-entry-preview-table { min-width: 1050px; }
+
+.wp-message {
+  padding: 10px 12px;
+  border: 1px solid;
+  font-size: 12px;
+  font-weight: 700;
+}
+.wp-message.success { background: #edf8e9; border-color: #c7e2bd; color: #286d2c; }
+.wp-message.error { background: #fff0ef; border-color: #e9c2bf; color: #ad2f28; }
+
+.wp-entry-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+/* Bring the dedicated receiving/issuing/location pages into the same compact system. */
+.bi-section,
+.bi-summary-card,
+.li-toolbar-card,
+.li-grid-card,
+.li-detail-card {
+  border-radius: 3px !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04) !important;
+}
+.bi-section-title,
+.li-grid-head {
+  background: linear-gradient(#f2f3f2,#e5e7e5) !important;
+}
+
+@media (max-width: 1150px) {
+  .wp-entry-grid-4 { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .wp-span-3,.wp-span-4 { grid-column: span 2; }
+}
+
+@media (max-width: 720px) {
+  .wp-content { padding: 16px 10px 34px; }
+  .wp-entry-grid-4 { grid-template-columns: 1fr; }
+  .wp-span-2,.wp-span-3,.wp-span-4 { grid-column: span 1; }
+  .wp-inline-field { height: auto; flex-direction: column; }
+  .wp-inline-label {
+    min-height: 26px;
+    border-right: 1px solid #cbd1cb;
+    border-bottom: 0;
+    border-radius: 3px 3px 0 0;
+  }
+  .wp-inline-control .wp-input,
+  .wp-inline-control .wp-select { border-radius: 0 0 3px 3px; }
+  .wp-entry-strip { align-items: flex-start; flex-direction: column; }
+}

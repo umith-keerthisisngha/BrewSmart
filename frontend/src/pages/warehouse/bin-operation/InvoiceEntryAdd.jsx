@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import FormShell, { Field } from "../../../components/warehouse/FormShell";
+import FormShell from "../../../components/warehouse/FormShell";
 import LocationAllocatePanel from "../../../components/warehouse/LocationAllocatePanel";
 
 const API = "http://localhost/BrewSmart/backend/api";
@@ -13,21 +13,32 @@ const makeEmptyForm = () => ({
   sellingMark: "",
   grade: "",
   packingType: "",
-  chestType: "",
+  chestType: "B",
   broker: "",
+  turnNo: "",
+  vehicleNo: "",
+  driverName: "",
+  driverNic: "",
   chests: "",
-  weightPerChest: "",
   netWeightEach: "",
-  totalGrossWeight: "",
   moistureContent: "",
   mfdDate: "",
   sampleDrawn: false,
   reprint: false,
   exportable: false,
   colourSeparated: false,
-  store: "",
+  store: "BrewSmart Warehouse",
   date: new Date().toISOString().slice(0, 10),
 });
+
+function InlineField({ label, children, className = "" }) {
+  return (
+    <label className={`wp-inline-field ${className}`.trim()}>
+      <span className="wp-inline-label">{label}</span>
+      <span className="wp-inline-control">{children}</span>
+    </label>
+  );
+}
 
 export default function InvoiceEntryAdd() {
   const [form, setForm] = useState(makeEmptyForm);
@@ -36,9 +47,11 @@ export default function InvoiceEntryAdd() {
   const [marks, setMarks] = useState([]);
   const [grades, setGrades] = useState([]);
   const [packingTypes, setPackingTypes] = useState([]);
+  const [brokers, setBrokers] = useState([]);
   const [metaLoading, setMetaLoading] = useState(true);
 
   const [showLocationPanel, setShowLocationPanel] = useState(false);
+  const [showAiDetails, setShowAiDetails] = useState(false);
   const [location, setLocation] = useState(null);
   const [autoAllocate, setAutoAllocate] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
@@ -59,12 +72,14 @@ export default function InvoiceEntryAdd() {
         setMarks(d.marks || []);
         setGrades(d.grades || []);
         setPackingTypes(d.packing_types || []);
+        setBrokers(d.brokers || []);
       })
+      .catch(() => setMessage({ type: "error", text: "Could not load Master data." }))
       .finally(() => setMetaLoading(false));
   }, []);
 
-  // AI model is embedded in the Add New screen. Once the core weight details are
-  // available it previews a safe allocation plan automatically.
+  // Keep the AI model live in the Add New form. The actual save endpoint runs the
+  // same safety/optimization flow again, so frontend preview is never authoritative.
   useEffect(() => {
     const chests = Number(form.chests || 0);
     const bagWeight = Number(form.netWeightEach || 0);
@@ -106,7 +121,7 @@ export default function InvoiceEntryAdd() {
       } finally {
         if (!cancelled) setAiLoading(false);
       }
-    }, 550);
+    }, 450);
 
     return () => {
       cancelled = true;
@@ -123,12 +138,22 @@ export default function InvoiceEntryAdd() {
   ]);
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const setMark = (e) => {
+    const code = e.target.value;
+    const selectedMark = marks.find((m) => String(m.mark_code) === String(code));
+    setForm((f) => ({
+      ...f,
+      mark: code,
+      sellingMark: selectedMark ? selectedMark.mark_name || selectedMark.mark_code || code : "",
+    }));
+  };
   const setChecked = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.checked }));
 
   const resetForm = () => {
     setForm(makeEmptyForm());
     setLocation(null);
     setShowLocationPanel(false);
+    setShowAiDetails(false);
     setMessage(null);
     setAiResult(null);
     setAiError("");
@@ -137,20 +162,28 @@ export default function InvoiceEntryAdd() {
 
   const handleSave = async () => {
     setMessage(null);
+    if (!form.broker.trim()) {
+      setMessage({ type: "error", text: "Broker is required." });
+      return;
+    }
+    if (!form.turnNo.trim()) {
+      setMessage({ type: "error", text: "Turn No is required so GRN can auto-load this arrival later." });
+      return;
+    }
     if (!form.invoiceNo.trim()) {
       setMessage({ type: "error", text: "Invoice No is required." });
       return;
     }
     if (!form.chests || Number(form.chests) <= 0) {
-      setMessage({ type: "error", text: "Chests must be greater than 0." });
+      setMessage({ type: "error", text: "No. of Chests must be greater than 0." });
       return;
     }
     if (!form.netWeightEach || Number(form.netWeightEach) <= 0) {
-      setMessage({ type: "error", text: "Net Weight Each is required for net-weight calculation and safe AI allocation." });
+      setMessage({ type: "error", text: "Net Weight Each is required." });
       return;
     }
     if (autoAllocate && (!aiResult?.can_allocate || !aiResult?.plan?.length)) {
-      setMessage({ type: "error", text: "No complete safe AI allocation plan is available yet. Check the entered weight/capacity details." });
+      setMessage({ type: "error", text: "No complete safe AI allocation plan is available yet." });
       return;
     }
 
@@ -171,240 +204,317 @@ export default function InvoiceEntryAdd() {
           : "";
         setMessage({
           type: "success",
-          text: `Invoice ${res.data.data.invoice_no} saved successfully. Net weight ${Number(res.data.data.total_net_weight || 0).toFixed(2)} kg.${allocationText}`,
+          text: `Invoice ${res.data.data.invoice_no} saved successfully. Net weight ${Number(
+            res.data.data.total_net_weight || 0
+          ).toFixed(2)} kg.${allocationText}`,
         });
         setForm(makeEmptyForm());
         setLocation(null);
         setAiResult(null);
         setShowLocationPanel(false);
+        setShowAiDetails(false);
         setAutoAllocate(true);
       } else {
         setMessage({ type: "error", text: res.data.message || "Save failed." });
       }
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err.response?.data?.message || "Could not reach the server.",
-      });
+      setMessage({ type: "error", text: err.response?.data?.message || "Could not reach the server." });
     } finally {
       setSaving(false);
     }
   };
 
+  const previewReady = Boolean(form.invoiceNo || form.chests || form.grade || form.mark);
+
   return (
-    <FormShell crumb="Bin Operation / Invoice Entry" title="Add New">
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        <Field label="Invoice Year">
-          <input className="wp-input" value={form.invoiceYear} onChange={set("invoiceYear")} placeholder="e.g. 2026" />
-        </Field>
-        <Field label="Invoice No *">
-          <input className="wp-input" value={form.invoiceNo} onChange={set("invoiceNo")} />
-        </Field>
-
-        {!metaLoading && (
-          <>
-            <Field label="Mark">
-              <select className="wp-input" value={form.mark} onChange={set("mark")}>
-                <option value="">-- Select from Mark Master --</option>
-                {marks.map((m) => (
-                  <option key={m.mark_id || m.mark_code} value={m.mark_code}>{m.mark_code} - {m.mark_name}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Selling Mark">
-              <input className="wp-input" value={form.sellingMark} onChange={set("sellingMark")} />
-            </Field>
-
-            <Field label="Grade">
-              <select className="wp-input" value={form.grade} onChange={set("grade")}>
-                <option value="">-- Select from Grade Master --</option>
-                {grades.map((g) => (
-                  <option key={g.grade_id || g.grade_code} value={g.grade_code}>{g.grade_code} - {g.grade_name}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Packing Type">
-              <select className="wp-input" value={form.packingType} onChange={set("packingType")}>
-                <option value="">-- Select from Packing Type Master --</option>
-                {packingTypes.map((p) => (
-                  <option key={p.packing_type_id || p.packing_code} value={p.packing_code}>{p.packing_code} - {p.packing_name}</option>
-                ))}
-              </select>
-            </Field>
-          </>
-        )}
-
-        <Field label="Chest Type">
-          <select className="wp-input" value={form.chestType} onChange={set("chestType")}>
-            <option value="">-- Select --</option>
-            {CHEST_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </Field>
-
-        <Field label="Broker">
-          <input className="wp-input" value={form.broker} onChange={set("broker")} />
-        </Field>
-        <Field label="Chests *">
-          <input className="wp-input" type="number" min="0" value={form.chests} onChange={set("chests")} />
-        </Field>
-        <Field label="Weight Per Chest (kg)">
-          <input className="wp-input" type="number" min="0" step="0.01" value={form.weightPerChest} onChange={set("weightPerChest")} />
-        </Field>
-        <Field label="Net Weight Each (kg) *">
-          <input className="wp-input" type="number" min="0" step="0.01" value={form.netWeightEach} onChange={set("netWeightEach")} />
-        </Field>
-        <Field label="Total Net Weight (kg) - Auto">
-          <input className="wp-input" value={totalNetWeight} readOnly style={{ fontWeight: 800, background: "#f0f7ed" }} />
-        </Field>
-        <Field label="Total Gross Weight (kg)">
-          <input className="wp-input" type="number" min="0" step="0.01" value={form.totalGrossWeight} onChange={set("totalGrossWeight")} />
-        </Field>
-        <Field label="Moisture Content %">
-          <input className="wp-input" type="number" min="0" step="0.01" value={form.moistureContent} onChange={set("moistureContent")} />
-        </Field>
-        <Field label="MFD Date">
-          <input className="wp-input" type="date" value={form.mfdDate} onChange={set("mfdDate")} />
-        </Field>
-        <Field label="Store">
-          <input className="wp-input" value={form.store} onChange={set("store")} />
-        </Field>
-        <Field label="Date">
-          <input className="wp-input" type="date" value={form.date} onChange={set("date")} />
-        </Field>
-      </div>
-
-      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 16 }}>
-        {[
-          ["sampleDrawn", "Sample Drawn"],
-          ["reprint", "Reprint"],
-          ["exportable", "Exportable"],
-          ["colourSeparated", "Colour Separated"],
-        ].map(([key, label]) => (
-          <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <input type="checkbox" checked={form[key]} onChange={setChecked(key)} /> {label}
-          </label>
-        ))}
-      </div>
-
-      <div className="wp-panel" style={{ marginTop: 20 }}>
-        <div className="wp-panel-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <span>AI Location Allocation Model</span>
-          <span style={{ fontSize: 11, opacity: 0.8 }}>Rule Engine + Weighted Model 2026.2</span>
+    <FormShell crumb="Bin Operation / Invoice Entry" title="Invoice Entry">
+      <div className="wp-entry-screen">
+        <div className="wp-entry-strip">
+          <div>
+            <span className="wp-entry-strip-label">RECEIVING MODE</span>
+            <strong>Broker Arrival</strong>
+          </div>
+          <div className="wp-entry-strip-actions">
+            <span className="wp-status-pill">BrewSmart Warehouse</span>
+          </div>
         </div>
-        <div className="wp-panel-body">
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={autoAllocate}
-              onChange={(e) => {
-                setAutoAllocate(e.target.checked);
-                if (!e.target.checked) setLocation(null);
-              }}
-            />
-            Automatically allocate the best safe location when I save
-          </label>
 
-          {aiLoading && <p className="wp-hint" style={{ marginTop: 12 }}>Analyzing capacity, weight, safety rules and rack balance...</p>}
-          {aiError && <p className="wp-hint" style={{ color: "#b91c1c", fontWeight: 700 }}>{aiError}</p>}
-          {!aiLoading && !aiResult && !aiError && (
-            <p className="wp-hint" style={{ marginTop: 12 }}>Enter Chests and Net Weight Each to run the location model automatically.</p>
-          )}
+        <section className="wp-form-section">
+          <div className="wp-form-section-title">Arrival / Turn Information</div>
+          <div className="wp-form-section-body wp-entry-grid wp-entry-grid-4">
+            <InlineField label="Broker *" className="wp-span-2">
+              <select className="wp-input" value={form.broker} onChange={set("broker")} disabled={metaLoading}>
+                <option value="">-- Select Broker --</option>
+                {brokers.map((b) => (
+                  <option key={b.broker_id || b.broker_code} value={b.broker_name || b.broker_code}>
+                    {b.broker_code ? `${b.broker_code} - ` : ""}{b.broker_name}
+                  </option>
+                ))}
+              </select>
+            </InlineField>
 
-          {aiResult && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                <strong style={{ color: aiResult.can_allocate ? "#236c38" : "#b45309" }}>
-                  {aiResult.can_allocate ? "SAFE ALLOCATION PLAN READY" : "PARTIAL PLAN ONLY"}
-                </strong>
-                <span className="wp-hint">Allowed levels: {(aiResult.profile?.allowed_levels || []).join(", ") || "None"}</span>
-                <span className="wp-hint">Model: {aiResult.model_version}</span>
-              </div>
+            <InlineField label="Store" className="wp-span-2">
+              <input className="wp-input wp-readonly" value={form.store} readOnly />
+            </InlineField>
 
-              {(aiResult.profile?.rules_applied || []).length > 0 && (
-                <p className="wp-hint" style={{ marginTop: 8 }}>
-                  Safety rules: {aiResult.profile.rules_applied.join(" • ")}
-                </p>
+            <InlineField label="Turn Date">
+              <input className="wp-input" type="date" value={form.date} onChange={set("date")} />
+            </InlineField>
+            <InlineField label="Turn No. *">
+              <input className="wp-input" value={form.turnNo} onChange={set("turnNo")} placeholder="e.g. TURN-020" />
+            </InlineField>
+            <InlineField label="Lorry No.">
+              <input className="wp-input" value={form.vehicleNo} onChange={set("vehicleNo")} />
+            </InlineField>
+            <InlineField label="NIC/DV No.">
+              <input className="wp-input" value={form.driverNic} onChange={set("driverNic")} />
+            </InlineField>
+
+            <InlineField label="Invoice Date">
+              <input className="wp-input" type="date" value={form.date} onChange={set("date")} />
+            </InlineField>
+            <InlineField label="Invoice Year">
+              <input className="wp-input" value={form.invoiceYear} onChange={set("invoiceYear")} />
+            </InlineField>
+            <InlineField label="Driver Name" className="wp-span-2">
+              <input className="wp-input" value={form.driverName} onChange={set("driverName")} />
+            </InlineField>
+
+            <InlineField label="Mark" className="wp-span-2">
+              <select className="wp-input" value={form.mark} onChange={setMark} disabled={metaLoading}>
+                <option value="">-- Select Mark --</option>
+                {marks.map((m) => (
+                  <option key={m.mark_id || m.mark_code} value={m.mark_code}>
+                    {m.mark_code} - {m.mark_name}
+                  </option>
+                ))}
+              </select>
+            </InlineField>
+            <InlineField label="Selling Mark" className="wp-span-2">
+              <input className="wp-input wp-readonly" value={form.sellingMark} readOnly placeholder="Auto from selected Mark" />
+            </InlineField>
+          </div>
+        </section>
+
+        <section className="wp-form-section">
+          <div className="wp-form-section-title">Invoice Details</div>
+          <div className="wp-form-section-body wp-entry-grid wp-entry-grid-4">
+            <InlineField label="Invoice Number">
+              <input className="wp-input" value={form.invoiceNo} onChange={set("invoiceNo")} />
+            </InlineField>
+            <InlineField label="Grade">
+              <select className="wp-input" value={form.grade} onChange={set("grade")} disabled={metaLoading}>
+                <option value="">-- Select Grade --</option>
+                {grades.map((g) => (
+                  <option key={g.grade_id || g.grade_code} value={g.grade_code}>
+                    {g.grade_code} - {g.grade_name}
+                  </option>
+                ))}
+              </select>
+            </InlineField>
+            <InlineField label="No. of Chests *">
+              <input className="wp-input" type="number" min="1" value={form.chests} onChange={set("chests")} />
+            </InlineField>
+            <InlineField label="Chest Type">
+              <select className="wp-input" value={form.chestType} onChange={set("chestType")}>
+                {CHEST_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </InlineField>
+
+            <InlineField label="Net Weight Each *">
+              <input className="wp-input" type="number" min="0" step="0.01" value={form.netWeightEach} onChange={set("netWeightEach")} />
+            </InlineField>
+            <InlineField label="Packing Type">
+              <select className="wp-input" value={form.packingType} onChange={set("packingType")} disabled={metaLoading}>
+                <option value="">-- Select Packing Type --</option>
+                {packingTypes.map((p) => (
+                  <option key={p.packing_type_id || p.packing_code} value={p.packing_code}>
+                    {p.packing_code} - {p.packing_name}
+                  </option>
+                ))}
+              </select>
+            </InlineField>
+            <InlineField label="Moisture Content %">
+              <input className="wp-input" type="number" min="0" step="0.01" value={form.moistureContent} onChange={set("moistureContent")} />
+            </InlineField>
+            <InlineField label="MFD">
+              <input className="wp-input" type="date" value={form.mfdDate} onChange={set("mfdDate")} />
+            </InlineField>
+
+            <div className="wp-checkbox-line wp-span-3">
+              {[
+                ["sampleDrawn", "Sample Drawn"],
+                ["reprint", "Reprint"],
+                ["exportable", "Exportable"],
+                ["colourSeparated", "Colour Separated"],
+              ].map(([key, label]) => (
+                <label key={key}>
+                  <input type="checkbox" checked={form[key]} onChange={setChecked(key)} /> {label}
+                </label>
+              ))}
+            </div>
+
+            <InlineField label="Total Net Weight">
+              <input className="wp-input wp-readonly wp-total-input" value={`${totalNetWeight} kg`} readOnly />
+            </InlineField>
+
+            <div className="wp-location-command wp-span-4">
+              <button
+                type="button"
+                className="wp-btn wp-btn-info"
+                onClick={() => setShowAiDetails((v) => !v)}
+                disabled={!form.chests || !form.netWeightEach}
+              >
+                Location Allocate
+              </button>
+              {aiLoading && <span className="wp-ai-inline">AI analyzing...</span>}
+              {!aiLoading && location && (
+                <span className="wp-ai-inline wp-ai-success">
+                  AI Primary Location: {location.location_code}{location.score ? ` (${location.score}%)` : ""}
+                </span>
               )}
+              {!aiLoading && aiError && <span className="wp-ai-inline wp-ai-error">{aiError}</span>}
+            </div>
+          </div>
+        </section>
 
-              <div className="wp-table-wrap" style={{ marginTop: 12 }}>
-                <table className="wp-table">
-                  <thead>
-                    <tr>
-                      <th>Location</th><th>Level</th><th>Chests</th><th>Weight</th><th>Score</th><th>Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(aiResult.plan || []).length === 0 ? (
-                      <tr><td colSpan={6} className="wp-table-empty">No safe location can currently accept this invoice.</td></tr>
-                    ) : (
-                      aiResult.plan.map((p) => (
-                        <tr key={p.location_id}>
-                          <td style={{ fontWeight: 800 }}>{p.location_code}</td>
-                          <td>{p.level_code}</td>
-                          <td>{p.chests_allocated}</td>
-                          <td>{Number(p.weight_allocated || 0).toFixed(2)} kg</td>
-                          <td>{p.score}%</td>
-                          <td style={{ maxWidth: 420 }}>{p.reason}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+        {showAiDetails && (
+          <section className="wp-form-section wp-ai-section">
+            <div className="wp-form-section-title wp-title-with-meta">
+              <span>AI Location Allocation</span>
+              <small>Safety Rule Engine + Weighted Optimization Model</small>
+            </div>
+            <div className="wp-form-section-body">
+              <div className="wp-ai-toolbar">
+                <label className="wp-checkbox-strong">
+                  <input
+                    type="checkbox"
+                    checked={autoAllocate}
+                    onChange={(e) => {
+                      setAutoAllocate(e.target.checked);
+                      if (!e.target.checked) setLocation(null);
+                    }}
+                  />
+                  Auto allocate best safe location when saving
+                </label>
+                <button
+                  type="button"
+                  className="wp-btn wp-btn-outline"
+                  onClick={() => {
+                    setAutoAllocate(false);
+                    setShowLocationPanel(true);
+                  }}
+                >
+                  Manual Override
+                </button>
               </div>
 
-              {!aiResult.can_allocate && aiResult.remaining_bags > 0 && (
-                <p className="wp-hint" style={{ color: "#b45309", fontWeight: 700 }}>
-                  {aiResult.remaining_bags} chest(s) still need safe capacity.
-                </p>
+              {aiResult && (
+                <>
+                  <div className="wp-ai-summary-row">
+                    <strong className={aiResult.can_allocate ? "ok" : "warn"}>
+                      {aiResult.can_allocate ? "SAFE ALLOCATION PLAN READY" : "PARTIAL PLAN ONLY"}
+                    </strong>
+                    <span>Allowed levels: {(aiResult.profile?.allowed_levels || []).join(", ") || "None"}</span>
+                    <span>Model: {aiResult.model_version}</span>
+                  </div>
+                  <div className="wp-table-wrap wp-compact-table-wrap">
+                    <table className="wp-table">
+                      <thead>
+                        <tr>
+                          <th>Location</th><th>Level</th><th>Chests</th><th>Weight</th><th>Score</th><th>Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(aiResult.plan || []).length === 0 ? (
+                          <tr><td colSpan={6} className="wp-table-empty">No safe location can currently accept this invoice.</td></tr>
+                        ) : (
+                          aiResult.plan.map((p) => (
+                            <tr key={p.location_id}>
+                              <td><strong>{p.location_code}</strong></td>
+                              <td>{p.level_code}</td>
+                              <td>{p.chests_allocated}</td>
+                              <td>{Number(p.weight_allocated || 0).toFixed(2)} kg</td>
+                              <td>{p.score}%</td>
+                              <td>{p.reason}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
-          )}
-        </div>
-      </div>
-
-      <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          className="wp-btn wp-btn-outline"
-          onClick={() => {
-            setAutoAllocate(false);
-            setShowLocationPanel((s) => !s);
-          }}
-        >
-          Manual Location Override
-        </button>
-        {location && (
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#2f7a3e" }}>
-            {autoAllocate ? "AI Primary Location" : "Manual Location"}: {location.location_code}
-            {location.score ? ` (${location.score}%)` : ""}
-          </span>
+          </section>
         )}
-      </div>
 
-      {showLocationPanel && (
-        <LocationAllocatePanel
-          selected={location}
-          onSelect={(loc) => {
-            setLocation(loc);
-            setAutoAllocate(false);
-            setShowLocationPanel(false);
-          }}
-          onClose={() => setShowLocationPanel(false)}
-        />
-      )}
+        {showLocationPanel && (
+          <LocationAllocatePanel
+            selected={location}
+            onSelect={(loc) => {
+              setLocation(loc);
+              setAutoAllocate(false);
+              setShowLocationPanel(false);
+            }}
+            onClose={() => setShowLocationPanel(false)}
+          />
+        )}
 
-      {message && (
-        <p className="wp-hint" style={{ color: message.type === "error" ? "#b91c1c" : "#1a7a3c", fontWeight: 700, marginTop: 14 }}>
-          {message.text}
-        </p>
-      )}
+        <section className="wp-form-section wp-entry-detail-section">
+          <div className="wp-form-section-title">Invoice Entry Details</div>
+          <div className="wp-table-wrap">
+            <table className="wp-table wp-entry-preview-table">
+              <thead>
+                <tr>
+                  <th>Invoice Number</th>
+                  <th>No. of Chests</th>
+                  <th>Net Weight Each</th>
+                  <th>Total Net Weight</th>
+                  <th>Grade</th>
+                  <th>Chest Type</th>
+                  <th>Packing Type</th>
+                  <th>MFD Date</th>
+                  <th>Moisture %</th>
+                  <th>Sample</th>
+                  <th>AI</th>
+                  <th>Location</th>
+                </tr>
+              </thead>
+              <tbody>
+                {previewReady ? (
+                  <tr>
+                    <td>{form.invoiceNo || "—"}</td>
+                    <td>{form.chests || "—"}</td>
+                    <td>{form.netWeightEach ? `${form.netWeightEach} kg` : "—"}</td>
+                    <td>{totalNetWeight} kg</td>
+                    <td>{form.grade || "—"}</td>
+                    <td>{form.chestType || "—"}</td>
+                    <td>{form.packingType || "—"}</td>
+                    <td>{form.mfdDate || "—"}</td>
+                    <td>{form.moistureContent || "—"}</td>
+                    <td>{form.sampleDrawn ? "Yes" : "No"}</td>
+                    <td>{autoAllocate ? "Auto" : "Manual"}</td>
+                    <td><strong>{location?.location_code || "Pending"}</strong></td>
+                  </tr>
+                ) : (
+                  <tr><td colSpan={12} className="wp-table-empty">No records to view</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-      <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
-        <button className="wp-btn wp-btn-primary" onClick={handleSave} disabled={saving || aiLoading}>
-          {saving ? "Saving & Allocating..." : "Save Invoice"}
-        </button>
-        <button className="wp-btn wp-btn-outline" onClick={resetForm}>Clear</button>
+        {message && (
+          <div className={`wp-message ${message.type === "error" ? "error" : "success"}`}>{message.text}</div>
+        )}
+
+        <div className="wp-entry-footer-actions">
+          <button className="wp-btn wp-btn-warning" type="button" onClick={resetForm}>Reset Form</button>
+          <button className="wp-btn wp-btn-primary" type="button" onClick={handleSave} disabled={saving || aiLoading}>
+            {saving ? "Saving & Allocating..." : "Save Details"}
+          </button>
+        </div>
       </div>
     </FormShell>
   );

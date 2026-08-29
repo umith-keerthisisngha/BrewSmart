@@ -8,6 +8,7 @@ const API = "http://localhost/BrewSmart/backend/api";
 
 const MASTER_ITEMS = [
   { key: "master.access_manager", label: "Access Manager", path: "/master/access-manager" },
+  { key: "master.broker", label: "Broker", path: "/master/broker" },
   { key: "master.mark", label: "Mark", path: "/master/mark" },
   { key: "master.grade", label: "Grade", path: "/master/grade" },
   { key: "master.packing_type", label: "Packing Type", path: "/master/packing-type" },

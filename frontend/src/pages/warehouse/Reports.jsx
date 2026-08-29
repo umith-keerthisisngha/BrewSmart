@@ -10,6 +10,18 @@ const API = "http://localhost/BrewSmart/backend/api";
 
 // Reports actually backed by a live endpoint today.
 const LIVE_REPORTS = {
+  "Daily Stock Summary": {
+    endpoint: "/reports/daily-stock-summary.php",
+    columns: [
+      { key: "report_date", label: "Date" },
+      { key: "arrival_bags", label: "Arrivals (Bags)" },
+      { key: "arrival_weight", label: "Arrivals Weight (kg)" },
+      { key: "delivery_bags", label: "Deliveries (Bags)" },
+      { key: "delivery_weight", label: "Deliveries Weight (kg)" },
+      { key: "stock_bags", label: "Stock (Bags)" },
+      { key: "stock_weight", label: "Stock Weight (kg)" },
+    ],
+  },
   "Invoice / Arrival Register": {
     endpoint: "/reports/invoices.php",
     columns: [
@@ -146,9 +158,7 @@ export default function Reports() {
     const live = LIVE_REPORTS[selectedReport];
     if (!live) {
       setRows(null);
-      setError(
-        `"${selectedReport}" isn't wired to a backend report endpoint yet. Invoice / Arrival Register, Daily Arrivals Summary, Rack Wise Stock, Mark Wise Stock and Daily Unloaded Turns are live.`
-      );
+      setError(`"${selectedReport}" isn't wired to a backend report endpoint yet.`);
       return null;
     }
 

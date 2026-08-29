@@ -16,6 +16,7 @@ export default function InvoiceEntryEdit() {
   const [marks, setMarks] = useState([]);
   const [grades, setGrades] = useState([]);
   const [packingTypes, setPackingTypes] = useState([]);
+  const [brokers, setBrokers] = useState([]);
 
   const [form, setForm] = useState(null); // the invoice currently being edited
   const [saving, setSaving] = useState(false);
@@ -30,6 +31,7 @@ export default function InvoiceEntryEdit() {
         setMarks(d.marks || []);
         setGrades(d.grades || []);
         setPackingTypes(d.packing_types || []);
+        setBrokers(d.brokers || []);
       })
       .catch(() => {});
   }, []);
@@ -64,19 +66,29 @@ export default function InvoiceEntryEdit() {
       packingType: row.packing_type ?? "",
       chestType: row.chest_type ?? "",
       broker: row.broker ?? "",
+      buyer: row.buyer ?? "",
+      turnNo: row.arrival_turn_no ?? "",
+      vehicleNo: row.arrival_vehicle_no ?? "",
+      driverName: row.arrival_driver_name ?? "",
+      driverNic: row.arrival_driver_nic ?? "",
       chests: row.chests ?? "",
       weightPerChest: row.weight_per_chest ?? "",
       netWeightEach: row.net_weight_each ?? "",
       totalGrossWeight: row.total_gross_weight ?? "",
       moistureContent: row.moisture_content ?? "",
       mfdDate: row.mfd_date ?? "",
-      store: row.store ?? "",
+      store: row.store ?? "BrewSmart Warehouse",
       date: row.invoice_date ?? "",
       location: row.location_id ? { location_id: row.location_id, location_code: row.allocated_location || row.location_code } : null,
     });
   };
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const setMark = (e) => {
+    const code = e.target.value;
+    const selectedMark = marks.find((m) => String(m.mark_code) === String(code));
+    setForm((f) => ({ ...f, mark: code, sellingMark: selectedMark ? (selectedMark.mark_name || selectedMark.mark_code || code) : "" }));
+  };
 
 
   const allocateLocation = async (loc) => {
@@ -191,7 +203,7 @@ export default function InvoiceEntryEdit() {
             </Field>
 
             <Field label="Mark">
-              <select className="wp-input" value={form.mark} onChange={set("mark")}>
+              <select className="wp-input" value={form.mark} onChange={setMark}>
                 <option value="">-- Select from Mark Master --</option>
                 {marks.map((m) => (
                   <option key={m.mark_id || m.mark_code} value={m.mark_code}>{m.mark_code} - {m.mark_name}</option>
@@ -199,7 +211,7 @@ export default function InvoiceEntryEdit() {
               </select>
             </Field>
             <Field label="Selling Mark">
-              <input className="wp-input" value={form.sellingMark} onChange={set("sellingMark")} />
+              <input className="wp-input" value={form.sellingMark} readOnly style={{ background: "#f4f7f2", fontWeight: 700 }} />
             </Field>
 
             <Field label="Grade">
@@ -232,7 +244,29 @@ export default function InvoiceEntryEdit() {
             </Field>
 
             <Field label="Broker">
-              <input className="wp-input" value={form.broker} onChange={set("broker")} />
+              <select className="wp-input" value={form.broker} onChange={set("broker")}>
+                <option value="">-- Select from Broker Master --</option>
+                {brokers.map((b) => (
+                  <option key={b.broker_id || b.broker_code} value={b.broker_name || b.broker_code}>
+                    {b.broker_code ? `${b.broker_code} - ` : ""}{b.broker_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Buyer">
+              <input className="wp-input" value={form.buyer} onChange={set("buyer")} />
+            </Field>
+            <Field label="Arrival / Turn No">
+              <input className="wp-input" value={form.turnNo} onChange={set("turnNo")} />
+            </Field>
+            <Field label="Lorry / Vehicle No">
+              <input className="wp-input" value={form.vehicleNo} onChange={set("vehicleNo")} />
+            </Field>
+            <Field label="Driver Name">
+              <input className="wp-input" value={form.driverName} onChange={set("driverName")} />
+            </Field>
+            <Field label="Driver NIC / DV No">
+              <input className="wp-input" value={form.driverNic} onChange={set("driverNic")} />
             </Field>
             <Field label="Chests">
               <input className="wp-input" type="number" min="0" value={form.chests} onChange={set("chests")} />

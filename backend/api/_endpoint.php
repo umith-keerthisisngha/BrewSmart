@@ -436,12 +436,59 @@ case 'reports_movements': requirePermission('warehousing.reports');$rows=db()->q
 case 'reports_invoice_register':
     requirePermission('warehousing.reports');
     $q=trim((string)($_GET['q']??''));$from=trim((string)($_GET['from']??''));$to=trim((string)($_GET['to']??''));
-    $sql="SELECT wi.invoice_id,wi.invoice_date,wi.invoice_no,wi.mark,wi.selling_mark,wi.grade,wi.packing_type,wi.broker,wi.chests,wi.net_weight_each,wi.total_net_weight,wi.total_gross_weight,wi.allocation_model,wi.allocation_score,COALESCE(GROUP_CONCAT(CONCAT(wl.location_code,' (',ila.chests_allocated,')') ORDER BY wl.location_code SEPARATOR ', '),wi.location_code) allocated_locations FROM warehouse_invoices wi LEFT JOIN invoice_location_allocations ila ON ila.invoice_id=wi.invoice_id LEFT JOIN warehouse_locations wl ON wl.location_id=ila.location_id WHERE 1=1";$p=[];
+    $sql="SELECT wi.invoice_id,wi.invoice_date,wi.invoice_no,wi.mark,wi.selling_mark,wi.grade,wi.packing_type,wi.broker,wi.buyer,wi.chests,wi.net_weight_each,wi.total_net_weight,wi.total_gross_weight,wi.allocation_model,wi.allocation_score,COALESCE(GROUP_CONCAT(CONCAT(wl.location_code,' (',ila.chests_allocated,')') ORDER BY wl.location_code SEPARATOR ', '),wi.location_code) allocated_locations FROM warehouse_invoices wi LEFT JOIN invoice_location_allocations ila ON ila.invoice_id=wi.invoice_id LEFT JOIN warehouse_locations wl ON wl.location_id=ila.location_id WHERE 1=1";$p=[];
     if($from!==''){$sql.=' AND wi.invoice_date>=?';$p[]=$from;}if($to!==''){$sql.=' AND wi.invoice_date<=?';$p[]=$to;}if($q!==''){$like="%$q%";$sql.=' AND (wi.invoice_no LIKE ? OR wi.mark LIKE ? OR wi.grade LIKE ? OR wi.broker LIKE ? OR wi.packing_type LIKE ?)';$p=array_merge($p,[$like,$like,$like,$like,$like]);}
     $sql.=' GROUP BY wi.invoice_id ORDER BY wi.invoice_date DESC,wi.invoice_id DESC LIMIT 1000';$st=db()->prepare($sql);$st->execute($p);ok($st->fetchAll());
 case 'reports_daily_arrivals':
     requirePermission('warehousing.reports');
     $rows=db()->query("SELECT invoice_date,COALESCE(NULLIF(broker,''),'(Not set)') broker,COUNT(*) invoices,SUM(chests) chests,ROUND(SUM(total_net_weight),2) total_net_weight FROM warehouse_invoices GROUP BY invoice_date,broker ORDER BY invoice_date DESC,broker LIMIT 365")->fetchAll();ok($rows);
+case 'reports_daily_stock_summary':
+    requirePermission('warehousing.reports');
+    $from=trim((string)($_GET['from']??''));
+    $to=trim((string)($_GET['to']??''));
+    $arrivalSql="SELECT invoice_date report_date, SUM(chests) arrival_bags, ROUND(SUM(COALESCE(total_net_weight,chests*COALESCE(net_weight_each,0))),2) arrival_weight FROM warehouse_invoices WHERE 1=1";
+    $arrivalParams=[];
+    if($from!==''){$arrivalSql.=' AND invoice_date>=?';$arrivalParams[]=$from;}
+    if($to!==''){$arrivalSql.=' AND invoice_date<=?';$arrivalParams[]=$to;}
+    $arrivalSql.=' GROUP BY invoice_date ORDER BY invoice_date';
+    $ast=db()->prepare($arrivalSql);$ast->execute($arrivalParams);$arrivals=$ast->fetchAll();
+
+    $deliverySql="SELECT DATE(created_at) report_date, SUM(quantity_bags) delivery_bags, ROUND(SUM(weight),2) delivery_weight FROM invoice_stock_movements WHERE movement_type='OUT'";
+    $deliveryParams=[];
+    if($from!==''){$deliverySql.=' AND DATE(created_at)>=?';$deliveryParams[]=$from;}
+    if($to!==''){$deliverySql.=' AND DATE(created_at)<=?';$deliveryParams[]=$to;}
+    $deliverySql.=' GROUP BY DATE(created_at) ORDER BY report_date';
+    $dst=db()->prepare($deliverySql);$dst->execute($deliveryParams);$deliveries=$dst->fetchAll();
+
+    // Calculate opening stock before the selected period so daily closing stock remains correct.
+    $openingBags=0;$openingWeight=0.0;
+    if($from!==''){
+        $ost=db()->prepare("SELECT COALESCE(SUM(chests),0) bags,COALESCE(SUM(COALESCE(total_net_weight,chests*COALESCE(net_weight_each,0))),0) weight FROM warehouse_invoices WHERE invoice_date<?");
+        $ost->execute([$from]);$o=$ost->fetch();$openingBags+=(int)($o['bags']??0);$openingWeight+=(float)($o['weight']??0);
+        $ost=db()->prepare("SELECT COALESCE(SUM(quantity_bags),0) bags,COALESCE(SUM(weight),0) weight FROM invoice_stock_movements WHERE movement_type='OUT' AND DATE(created_at)<?");
+        $ost->execute([$from]);$o=$ost->fetch();$openingBags-=(int)($o['bags']??0);$openingWeight-=(float)($o['weight']??0);
+    }
+
+    $daily=[];
+    foreach($arrivals as $r){$date=$r['report_date'];$daily[$date]??=['arrival_bags'=>0,'arrival_weight'=>0.0,'delivery_bags'=>0,'delivery_weight'=>0.0];$daily[$date]['arrival_bags']+=(int)$r['arrival_bags'];$daily[$date]['arrival_weight']+=(float)$r['arrival_weight'];}
+    foreach($deliveries as $r){$date=$r['report_date'];$daily[$date]??=['arrival_bags'=>0,'arrival_weight'=>0.0,'delivery_bags'=>0,'delivery_weight'=>0.0];$daily[$date]['delivery_bags']+=(int)$r['delivery_bags'];$daily[$date]['delivery_weight']+=(float)$r['delivery_weight'];}
+    ksort($daily);
+    $stockBags=max(0,$openingBags);$stockWeight=max(0.0,$openingWeight);$rows=[];
+    foreach($daily as $date=>$r){
+        $stockBags=max(0,$stockBags+$r['arrival_bags']-$r['delivery_bags']);
+        $stockWeight=max(0.0,$stockWeight+$r['arrival_weight']-$r['delivery_weight']);
+        $rows[]=[
+            'report_date'=>$date,
+            'arrival_bags'=>$r['arrival_bags'],
+            'arrival_weight'=>round($r['arrival_weight'],2),
+            'delivery_bags'=>$r['delivery_bags'],
+            'delivery_weight'=>round($r['delivery_weight'],2),
+            'stock_bags'=>$stockBags,
+            'stock_weight'=>round($stockWeight,2),
+        ];
+    }
+    $rows=array_reverse($rows);
+    ok($rows);
 case 'permissions_get':
     requireRole(['ADMIN']);
     echo json_encode(['success'=>true,'permissions'=>db()->query('SELECT role,page_key,has_access FROM role_permissions ORDER BY role,page_key')->fetchAll()]); exit;
@@ -508,7 +555,10 @@ case 'users_update':
     $actor=requirePermission('master.user_account');$d=body();$id=(int)($d['user_id']??0);if(!$id)fail('user_id is required');$st=db()->prepare('SELECT user_id,username,full_name,email,role,status FROM users WHERE user_id=?');$st->execute([$id]);$target=$st->fetch();if(!$target)fail('User not found',404);if($actor['role']==='MANAGER'&&!canManageTargetUser($actor,$target))fail('Managers can only update Warehouse Staff or Broker users',403);
     $role=strtoupper(trim((string)($d['role']??$target['role'])));if($actor['role']==='MANAGER'&&in_array($role,['ADMIN','MANAGER'],true))fail('Managers cannot assign Admin or Manager roles',403);$status=strtoupper(trim((string)($d['status']??$target['status'])));if(!in_array($status,['ACTIVE','INACTIVE'],true))fail('Invalid status');
     $fields=['full_name'=>$d['full_name']??$target['full_name'],'email'=>($d['email']??$target['email'])?:null,'role'=>$role,'status'=>$status];$params=[$fields['full_name'],$fields['email'],$fields['role'],$fields['status']];$sql='UPDATE users SET full_name=?,email=?,role=?,status=?';if(!empty($d['password'])){$sql.=',password_hash=?';$params[]=password_hash((string)$d['password'],PASSWORD_DEFAULT);}$sql.=' WHERE user_id=?';$params[]=$id;db()->prepare($sql)->execute($params);logActivity('UPDATE','USER',"Updated user #{$id}");ok([],'User updated');
-case 'meta': requireLogin(); ok(['tea_types'=>db()->query('SELECT * FROM tea_types ORDER BY tea_name')->fetchAll(),'grades'=>db()->query('SELECT * FROM tea_grades ORDER BY grade_code')->fetchAll(),'suppliers'=>db()->query('SELECT * FROM suppliers WHERE status=\'ACTIVE\' ORDER BY supplier_name')->fetchAll(),'marks'=>db()->query('SELECT * FROM marks WHERE status=\'ACTIVE\' ORDER BY mark_name')->fetchAll(),'packing_types'=>db()->query('SELECT * FROM packing_types WHERE status=\'ACTIVE\' ORDER BY packing_name')->fetchAll()]);
+case 'meta': requireLogin(); ok(['tea_types'=>db()->query('SELECT * FROM tea_types ORDER BY tea_name')->fetchAll(),'grades'=>db()->query('SELECT * FROM tea_grades ORDER BY grade_code')->fetchAll(),'suppliers'=>db()->query('SELECT * FROM suppliers WHERE status=\'ACTIVE\' ORDER BY supplier_name')->fetchAll(),'brokers'=>db()->query('SELECT * FROM brokers WHERE status=\'ACTIVE\' ORDER BY broker_name')->fetchAll(),'marks'=>db()->query('SELECT * FROM marks WHERE status=\'ACTIVE\' ORDER BY mark_name')->fetchAll(),'packing_types'=>db()->query('SELECT * FROM packing_types WHERE status=\'ACTIVE\' ORDER BY packing_name')->fetchAll()]);
+case 'brokers_list': requireLogin(); ok(db()->query("SELECT * FROM brokers WHERE status='ACTIVE' ORDER BY broker_name")->fetchAll());
+case 'brokers_create':
+    $u=requirePermission('master.broker');$d=body();$code=trim((string)($d['broker_code']??$d['code']??''));$name=trim((string)($d['broker_name']??$d['name']??''));if($code==='')fail('Broker code is required');if($name==='')$name=$code;$st=db()->prepare('INSERT INTO brokers(broker_code,broker_name) VALUES(?,?)');try{$st->execute([$code,$name]);}catch(Throwable $e){fail($e->getCode()==='23000'?'That broker already exists':$e->getMessage(),400);}logActivity('CREATE','MASTER',"Added broker {$code}");ok(['broker_id'=>(int)db()->lastInsertId()],'Broker added');
 case 'marks_list': requireLogin(); ok(db()->query("SELECT * FROM marks WHERE status='ACTIVE' ORDER BY mark_name")->fetchAll());
 case 'marks_create':
     $u=requirePermission('master.mark');$d=body();$code=trim((string)($d['mark_code']??$d['code']??''));$name=trim((string)($d['mark_name']??$d['name']??''));if($code==='')fail('Mark code is required');if($name==='')$name=$code;$st=db()->prepare('INSERT INTO marks(mark_code,mark_name) VALUES(?,?)');try{$st->execute([$code,$name]);}catch(Throwable $e){fail($e->getCode()==='23000'?'That mark already exists':$e->getMessage(),400);}logActivity('CREATE','MASTER',"Added mark {$code}");ok(['mark_id'=>(int)db()->lastInsertId()],'Mark added');
@@ -517,10 +567,169 @@ case 'packing_create':
     $u=requirePermission('master.packing_type');$d=body();$code=trim((string)($d['packing_code']??$d['code']??''));$name=trim((string)($d['packing_name']??$d['name']??''));if($code==='')fail('Packing type code is required');if($name==='')$name=$code;$st=db()->prepare('INSERT INTO packing_types(packing_code,packing_name) VALUES(?,?)');try{$st->execute([$code,$name]);}catch(Throwable $e){fail($e->getCode()==='23000'?'That packing type already exists':$e->getMessage(),400);}logActivity('CREATE','MASTER',"Added packing type {$code}");ok(['packing_type_id'=>(int)db()->lastInsertId()],'Packing type added');
 case 'grade_create':
     $u=requirePermission('master.grade');$d=body();$code=trim((string)($d['grade_code']??$d['code']??''));$name=trim((string)($d['grade_name']??$d['name']??''));if($code==='')fail('Grade code is required');if($name==='')$name=$code;$st=db()->prepare('INSERT INTO tea_grades(grade_code,grade_name) VALUES(?,?)');try{$st->execute([$code,$name]);}catch(Throwable $e){fail($e->getCode()==='23000'?'That grade already exists':$e->getMessage(),400);}logActivity('CREATE','MASTER',"Added grade {$code}");ok(['grade_id'=>(int)db()->lastInsertId()],'Grade added');
+case 'grn_invoice_candidates':
+    requirePermission('warehousing.grn_add_edit');
+    $date=trim((string)($_GET['date']??''));$broker=trim((string)($_GET['broker']??''));$buyer=trim((string)($_GET['buyer']??''));$mark=trim((string)($_GET['mark']??''));$q=trim((string)($_GET['q']??''));$turnNo=trim((string)($_GET['turn_no']??''));$editingGrn=(int)($_GET['grn_id']??0);
+    $sql="SELECT wi.invoice_id,wi.invoice_no,wi.invoice_date,wi.mark,wi.selling_mark,wi.grade,wi.packing_type,wi.chests,wi.net_weight_each,wi.total_net_weight,wi.broker,wi.buyer,wi.store,wi.location_code,wi.arrival_turn_no,wi.arrival_vehicle_no,wi.arrival_driver_name,wi.arrival_driver_nic,COALESCE(GROUP_CONCAT(CONCAT(wl.location_code,' (',ila.chests_allocated,')') ORDER BY wl.location_code SEPARATOR ', '),wi.location_code) allocated_locations,gi.grn_id existing_grn_id,g.grn_no existing_grn_no FROM warehouse_invoices wi LEFT JOIN invoice_location_allocations ila ON ila.invoice_id=wi.invoice_id LEFT JOIN warehouse_locations wl ON wl.location_id=ila.location_id LEFT JOIN grn_items gi ON gi.invoice_id=wi.invoice_id LEFT JOIN grns g ON g.grn_id=gi.grn_id WHERE 1=1";$params=[];
+    if($date!==''){$sql.=' AND wi.invoice_date=?';$params[]=$date;}
+    if($broker!==''){$sql.=' AND wi.broker LIKE ?';$params[]="%{$broker}%";}
+    if($buyer!==''){$sql.=' AND wi.buyer LIKE ?';$params[]="%{$buyer}%";}
+    if($mark!==''){$sql.=' AND wi.mark=?';$params[]=$mark;}
+    if($turnNo!==''){$sql.=' AND wi.arrival_turn_no=?';$params[]=$turnNo;}
+    if($q!==''){$like="%{$q}%";$sql.=' AND (wi.invoice_no LIKE ? OR wi.selling_mark LIKE ? OR wi.grade LIKE ? OR wi.broker LIKE ? OR wi.arrival_turn_no LIKE ?)';$params=array_merge($params,[$like,$like,$like,$like,$like]);}
+    if($editingGrn>0){$sql.=' AND (gi.grn_id IS NULL OR gi.grn_id=?)';$params[]=$editingGrn;}else{$sql.=' AND gi.grn_id IS NULL';}
+    $sql.=' GROUP BY wi.invoice_id,gi.grn_id,g.grn_no ORDER BY wi.invoice_date DESC,wi.invoice_id DESC LIMIT 300';$st=db()->prepare($sql);$st->execute($params);ok($st->fetchAll());
+case 'grn_turn_lookup':
+    requirePermission('warehousing.grn_add_edit');
+    $turnNo=trim((string)($_GET['turn_no']??''));$editingGrn=(int)($_GET['grn_id']??0);
+    if($turnNo==='')fail('Turn number is required');
+    $sql="SELECT wi.invoice_id,wi.invoice_no,wi.invoice_date,wi.mark,wi.selling_mark,wi.grade,wi.packing_type,wi.chests,wi.net_weight_each,wi.total_net_weight,wi.broker,wi.buyer,wi.store,wi.arrival_turn_no,wi.arrival_vehicle_no,wi.arrival_driver_name,wi.arrival_driver_nic,COALESCE(GROUP_CONCAT(CONCAT(wl.location_code,' (',ila.chests_allocated,')') ORDER BY wl.location_code SEPARATOR ', '),wi.location_code) allocated_locations,gi.grn_id existing_grn_id,g.grn_no existing_grn_no
+          FROM warehouse_invoices wi
+          LEFT JOIN invoice_location_allocations ila ON ila.invoice_id=wi.invoice_id
+          LEFT JOIN warehouse_locations wl ON wl.location_id=ila.location_id
+          LEFT JOIN grn_items gi ON gi.invoice_id=wi.invoice_id
+          LEFT JOIN grns g ON g.grn_id=gi.grn_id
+          WHERE wi.arrival_turn_no=?";$params=[$turnNo];
+    if($editingGrn>0){$sql.=' AND (gi.grn_id IS NULL OR gi.grn_id=?)';$params[]=$editingGrn;}else{$sql.=' AND gi.grn_id IS NULL';}
+    $sql.=' GROUP BY wi.invoice_id,gi.grn_id,g.grn_no ORDER BY wi.invoice_id';
+    $st=db()->prepare($sql);$st->execute($params);$rows=$st->fetchAll();
+    if(!$rows)fail('No unreceived arrival/invoice details found for turn '.$turnNo,404);
+    $first=$rows[0];
+    $header=[
+        'turn_no'=>$turnNo,
+        'date'=>$first['invoice_date']??date('Y-m-d'),
+        'store'=>$first['store']??'',
+        'vehicle_no'=>$first['arrival_vehicle_no']??'',
+        'driver_name'=>$first['arrival_driver_name']??'',
+        'driver_nic'=>$first['arrival_driver_nic']??'',
+        'broker'=>$first['broker']??'',
+        'buyer'=>$first['buyer']??'',
+        'mark'=>$first['mark']??'',
+        'source_type'=>!empty($first['buyer']) && empty($first['broker']) ? 'BUYER' : 'BROKER'
+    ];
+    ok(['header'=>$header,'items'=>$rows],'Arrival details loaded for turn '.$turnNo);
+case 'grn_get':
+    requireAnyPermission(['warehousing.grn_print','warehousing.grn_add_edit']);$id=(int)($_GET['id']??0);$no=trim((string)($_GET['grn_no']??''));if(!$id&&$no==='')fail('id or grn_no is required');
+    $st=db()->prepare('SELECT * FROM grns WHERE '.($id?'grn_id=?':'grn_no=?').' LIMIT 1');$st->execute([$id?:$no]);$grn=$st->fetch();if(!$grn)fail('GRN not found',404);
+    $it=db()->prepare("SELECT gi.*,wi.invoice_no,wi.mark,wi.selling_mark,wi.grade,wi.packing_type,wi.chests invoice_chests,wi.net_weight_each,wi.total_net_weight,wi.broker,COALESCE(GROUP_CONCAT(CONCAT(wl.location_code,' (',ila.chests_allocated,')') ORDER BY wl.location_code SEPARATOR ', '),wi.location_code) allocated_locations FROM grn_items gi JOIN warehouse_invoices wi ON wi.invoice_id=gi.invoice_id LEFT JOIN invoice_location_allocations ila ON ila.invoice_id=wi.invoice_id LEFT JOIN warehouse_locations wl ON wl.location_id=ila.location_id WHERE gi.grn_id=? GROUP BY gi.grn_item_id,wi.invoice_id ORDER BY gi.grn_item_id");$it->execute([$grn['grn_id']]);ok(['grn'=>$grn,'items'=>$it->fetchAll()]);
 case 'grn_create':
-    $u=requirePermission('warehousing.grn_add_edit');$d=body();$no=trim((string)($d['grn_no']??''));if($no==='')$no='GRN-'.date('YmdHis');$st=db()->prepare('INSERT INTO grns(grn_no,grn_date,vehicle_no,supplier,chests,remarks,created_by) VALUES(?,?,?,?,?,?,?)');$st->execute([$no,$d['date']??date('Y-m-d'),$d['vehicleNo']??null,$d['supplier']??null,(int)($d['chests']??0),$d['remarks']??null,$u['user_id']]);logActivity('CREATE','GRN',$no);ok(['grn_no'=>$no]);
+    $u=requirePermission('warehousing.grn_add_edit');$d=body();$grnId=(int)($d['grn_id']??0);$items=is_array($d['items']??null)?$d['items']:[];
+    $no=trim((string)($d['grn_no']??$d['grnNo']??''));if($no==='')$no='BR-GRN-'.date('Ymd-His');
+    $date=$d['date']??$d['grn_date']??date('Y-m-d');$store=trim((string)($d['store']??''));$turnNo=trim((string)($d['turnNo']??$d['turn_no']??''));if($turnNo==='')$turnNo='TURN-'.date('Ymd-His');
+    $vehicle=trim((string)($d['vehicleNo']??$d['vehicle_no']??''));$driverName=trim((string)($d['driverName']??''));$driverNic=trim((string)($d['driverNic']??''));$sourceType=strtoupper(trim((string)($d['sourceType']??'BROKER')));if(!in_array($sourceType,['BROKER','BUYER'],true))$sourceType='BROKER';
+    $broker=trim((string)($d['broker']??''));$buyer=trim((string)($d['buyer']??''));$mark=trim((string)($d['mark']??''));$supplier=trim((string)($d['supplier']??($broker?:$buyer)));$amalgamation=!empty($d['amalgamation'])?1:0;$remarks=trim((string)($d['remarks']??$d['commonRemark']??''));
+    if(!$items && empty($d['chests']))fail('Select at least one invoice to receive');
+    $pdo=db();$pdo->beginTransaction();
+    try{
+        if($grnId){$lock=$pdo->prepare('SELECT * FROM grns WHERE grn_id=? FOR UPDATE');$lock->execute([$grnId]);if(!$lock->fetch())throw new RuntimeException('GRN not found');$pdo->prepare('UPDATE grns SET grn_no=?,grn_date=?,store=?,turn_no=?,vehicle_no=?,driver_name=?,driver_nic=?,supplier=?,source_type=?,broker=?,buyer=?,mark=?,amalgamation=?,remarks=? WHERE grn_id=?')->execute([$no,$date,$store?:null,$turnNo,$vehicle?:null,$driverName?:null,$driverNic?:null,$supplier?:null,$sourceType,$broker?:null,$buyer?:null,$mark?:null,$amalgamation,$remarks?:null,$grnId]);$pdo->prepare('DELETE FROM grn_items WHERE grn_id=?')->execute([$grnId]);}
+        else{$pdo->prepare('INSERT INTO grns(grn_no,grn_date,store,turn_no,vehicle_no,driver_name,driver_nic,supplier,source_type,broker,buyer,mark,amalgamation,chests,remarks,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')->execute([$no,$date,$store?:null,$turnNo,$vehicle?:null,$driverName?:null,$driverNic?:null,$supplier?:null,$sourceType,$broker?:null,$buyer?:null,$mark?:null,$amalgamation,0,$remarks?:null,$u['user_id']]);$grnId=(int)$pdo->lastInsertId();}
+        $total=0;
+        foreach($items as $item){$invoiceId=(int)($item['invoice_id']??0);if(!$invoiceId)throw new RuntimeException('Invalid invoice selected');$invSt=$pdo->prepare('SELECT invoice_id,invoice_no,chests FROM warehouse_invoices WHERE invoice_id=? FOR UPDATE');$invSt->execute([$invoiceId]);$inv=$invSt->fetch();if(!$inv)throw new RuntimeException('Invoice not found');$received=(int)($item['received_chests']??$item['chests']??$inv['chests']);if($received<=0||$received>(int)$inv['chests'])throw new RuntimeException('Received chests for '.$inv['invoice_no'].' must be between 1 and '.$inv['chests']);$short=(float)($item['short_weight']??0);$pdo->prepare('INSERT INTO grn_items(grn_id,invoice_id,received_chests,short_weight,remarks) VALUES(?,?,?,?,?)')->execute([$grnId,$invoiceId,$received,$short,$item['remarks']??null]);$total+=$received;}
+        if(!$items)$total=max(0,(int)($d['chests']??0));$pdo->prepare('UPDATE grns SET chests=? WHERE grn_id=?')->execute([$total,$grnId]);$pdo->commit();logActivity($d['grn_id']?'UPDATE':'CREATE','GRN',$no.' | '.$total.' chests');ok(['grn_id'=>$grnId,'grn_no'=>$no,'turn_no'=>$turnNo,'chests'=>$total],$d['grn_id']?'GRN updated successfully':'GRN created successfully');
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();fail($e->getCode()==='23000'?'This invoice is already linked to another GRN or the GRN number already exists':$e->getMessage(),400);}
+case 'gin_stock_search':
+    requirePermission('warehousing.gin_add');$invoice=trim((string)($_GET['invoice_no']??''));$mark=trim((string)($_GET['mark']??''));$selling=trim((string)($_GET['selling_mark']??''));$q=trim((string)($_GET['q']??''));
+    $sql="SELECT wi.invoice_id,wi.invoice_no,wi.invoice_date,wi.mark,wi.selling_mark,wi.grade,wi.packing_type,wi.broker,wi.buyer,wi.chests,wi.net_weight_each,wi.total_net_weight,
+                 GREATEST(0,COALESCE(SUM(ila.chests_allocated),0)-COALESCE((SELECT SUM(gi2.chests_issued) FROM gin_items gi2 JOIN gins g2 ON g2.gin_id=gi2.gin_id WHERE gi2.invoice_id=wi.invoice_id AND g2.dispatch_status='PENDING'),0)) available_chests,
+                 COALESCE(GROUP_CONCAT(CONCAT(wl.location_code,' (',ila.chests_allocated,')') ORDER BY ila.allocated_at,wl.location_code SEPARATOR ', '),'') allocated_locations
+          FROM warehouse_invoices wi
+          LEFT JOIN invoice_location_allocations ila ON ila.invoice_id=wi.invoice_id
+          LEFT JOIN warehouse_locations wl ON wl.location_id=ila.location_id
+          WHERE 1=1";$params=[];
+    if($invoice!==''){$sql.=' AND wi.invoice_no LIKE ?';$params[]="%{$invoice}%";}if($mark!==''){$sql.=' AND wi.mark=?';$params[]=$mark;}if($selling!==''){$sql.=' AND wi.selling_mark LIKE ?';$params[]="%{$selling}%";}if($q!==''){$like="%{$q}%";$sql.=' AND (wi.invoice_no LIKE ? OR wi.mark LIKE ? OR wi.selling_mark LIKE ? OR wi.grade LIKE ? OR wi.broker LIKE ?)';$params=array_merge($params,[$like,$like,$like,$like,$like]);}$sql.=' GROUP BY wi.invoice_id HAVING available_chests>0 ORDER BY wi.invoice_date,wi.invoice_id LIMIT 200';$st=db()->prepare($sql);$st->execute($params);ok($st->fetchAll());
+case 'gin_get':
+    requireAnyPermission(['warehousing.gin_add','warehousing.gin_picking']);$id=(int)($_GET['id']??0);$no=trim((string)($_GET['gin_no']??''));if(!$id&&$no==='')fail('id or gin_no is required');$st=db()->prepare('SELECT * FROM gins WHERE '.($id?'gin_id=?':'gin_no=?').' LIMIT 1');$st->execute([$id?:$no]);$gin=$st->fetch();if(!$gin)fail('GIN not found',404);$it=db()->prepare("SELECT gi.*,wi.invoice_no,wi.mark,wi.selling_mark,wi.grade,wl.location_code FROM gin_items gi JOIN warehouse_invoices wi ON wi.invoice_id=gi.invoice_id JOIN warehouse_locations wl ON wl.location_id=gi.location_id WHERE gi.gin_id=? ORDER BY wi.invoice_no,wl.location_code");$it->execute([$gin['gin_id']]);ok(['gin'=>$gin,'items'=>$it->fetchAll()]);
+case 'gin_list':
+    requireAnyPermission(['warehousing.gin_add','warehousing.gin_picking']);$date=trim((string)($_GET['date']??''));$no=trim((string)($_GET['gin_no']??''));$buyer=trim((string)($_GET['buyer']??''));$q=trim((string)($_GET['q']??''));$sql="SELECT g.gin_id,g.gin_no,g.gin_date,g.store,g.turn_no,g.buyer,g.collection_person,g.collection_nic,g.vehicle_no,g.sale_type,g.other_broker,g.remarks,g.dispatch_status,g.gate_pass_no,g.gate_passed_at,g.created_at,COALESCE(SUM(gi.chests_issued),g.chests) chests,COUNT(DISTINCT gi.invoice_id) invoice_count,GROUP_CONCAT(DISTINCT wi.invoice_no ORDER BY wi.invoice_no SEPARATOR ', ') invoice_numbers,GROUP_CONCAT(DISTINCT wl.location_code ORDER BY wl.location_code SEPARATOR ', ') locations FROM gins g LEFT JOIN gin_items gi ON gi.gin_id=g.gin_id LEFT JOIN warehouse_invoices wi ON wi.invoice_id=gi.invoice_id LEFT JOIN warehouse_locations wl ON wl.location_id=gi.location_id WHERE 1=1";$params=[];if($date!==''){$sql.=' AND g.gin_date=?';$params[]=$date;}if($no!==''){$sql.=' AND g.gin_no LIKE ?';$params[]="%{$no}%";}if($buyer!==''){$sql.=' AND g.buyer LIKE ?';$params[]="%{$buyer}%";}if($q!==''){$like="%{$q}%";$sql.=' AND (g.gin_no LIKE ? OR g.turn_no LIKE ? OR g.vehicle_no LIKE ? OR g.buyer LIKE ? OR g.gate_pass_no LIKE ?)';$params=array_merge($params,[$like,$like,$like,$like,$like]);}$sql.=' GROUP BY g.gin_id ORDER BY g.gin_date DESC,g.gin_id DESC LIMIT 300';$st=db()->prepare($sql);$st->execute($params);ok($st->fetchAll());
 case 'gin_create':
-    $u=requirePermission('warehousing.gin_add');$d=body();$no=trim((string)($d['gin_no']??''));if($no==='')$no='GIN-'.date('YmdHis');$st=db()->prepare('INSERT INTO gins(gin_no,gin_date,buyer,invoice_no,chests,created_by) VALUES(?,?,?,?,?,?)');$st->execute([$no,$d['date']??date('Y-m-d'),$d['buyer']??null,$d['invoiceNo']??null,(int)($d['chests']??0),$u['user_id']]);logActivity('CREATE','GIN',$no);ok(['gin_no'=>$no]);
+    $u=requirePermission('warehousing.gin_add');$d=body();$items=is_array($d['items']??null)?$d['items']:[];
+    if(!$items && !empty($d['invoiceNo'])){$st=db()->prepare('SELECT invoice_id FROM warehouse_invoices WHERE invoice_no=? LIMIT 1');$st->execute([trim((string)$d['invoiceNo'])]);$invoiceId=(int)($st->fetchColumn()?:0);if($invoiceId)$items=[['invoice_id'=>$invoiceId,'quantity'=>(int)($d['chests']??0)]];}
+    if(!$items)fail('Add at least one invoice to the issuing grid');$no=trim((string)($d['gin_no']??$d['ginNo']??''));if($no==='')$no='BR-GIN-'.date('Ymd-His');$date=$d['date']??date('Y-m-d');$store=trim((string)($d['store']??''));$turnNo=trim((string)($d['turnNo']??''));if($turnNo==='')$turnNo='OUT-'.date('Ymd-His');$buyer=trim((string)($d['buyer']??''));$person=trim((string)($d['collectionPerson']??''));$nic=trim((string)($d['collectionNic']??''));$vehicle=trim((string)($d['vehicleNo']??''));$saleType=trim((string)($d['saleType']??'Auction Sale'));$otherBroker=!empty($d['otherBroker'])?1:0;$remarks=trim((string)($d['remarks']??''));if($buyer==='')fail('Buyer is required');
+    $pdo=db();$pdo->beginTransaction();
+    try{
+        $pdo->prepare("INSERT INTO gins(gin_no,gin_date,store,turn_no,buyer,collection_person,collection_nic,vehicle_no,sale_type,other_broker,remarks,invoice_no,chests,dispatch_status,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',?)")->execute([$no,$date,$store?:null,$turnNo,$buyer,$person?:null,$nic?:null,$vehicle?:null,$saleType?:null,$otherBroker,$remarks?:null,null,0,$u['user_id']]);$ginId=(int)$pdo->lastInsertId();$grandTotal=0;$invoiceNos=[];$picking=[];
+        foreach($items as $item){
+            $invoiceId=(int)($item['invoice_id']??0);$qty=(int)($item['quantity']??$item['chests']??0);
+            if(!$invoiceId||$qty<=0)throw new RuntimeException('Each issuing item needs an invoice and quantity');
+            $iv=$pdo->prepare('SELECT * FROM warehouse_invoices WHERE invoice_id=? FOR UPDATE');$iv->execute([$invoiceId]);$inv=$iv->fetch();if(!$inv)throw new RuntimeException('Invoice not found');
+            $alloc=$pdo->prepare("SELECT ila.*,wl.location_code,
+                         COALESCE((SELECT SUM(gi2.chests_issued) FROM gin_items gi2 JOIN gins g2 ON g2.gin_id=gi2.gin_id WHERE gi2.invoice_id=ila.invoice_id AND gi2.location_id=ila.location_id AND g2.dispatch_status='PENDING'),0) pending_qty
+                         FROM invoice_location_allocations ila
+                         JOIN warehouse_locations wl ON wl.location_id=ila.location_id
+                         WHERE ila.invoice_id=? AND ila.chests_allocated>0
+                         ORDER BY ila.allocated_at,ila.allocation_id FOR UPDATE");
+            $alloc->execute([$invoiceId]);$allocs=$alloc->fetchAll();
+            $available=0;foreach($allocs as $a){$available+=max(0,(int)$a['chests_allocated']-(int)$a['pending_qty']);}
+            if($qty>$available)throw new RuntimeException('Only '.$available.' chest(s) are available for invoice '.$inv['invoice_no'].' after pending GIN reservations');
+            $remaining=$qty;$netEach=(float)($inv['net_weight_each']??0);
+            foreach($allocs as $a){
+                if($remaining<=0)break;
+                $free=max(0,(int)$a['chests_allocated']-(int)$a['pending_qty']);
+                $take=min($remaining,$free);if($take<=0)continue;
+                $weight=round($take*$netEach,2);
+                $pdo->prepare('INSERT INTO gin_items(gin_id,invoice_id,location_id,chests_issued,net_weight_each,weight_issued) VALUES(?,?,?,?,?,?)')->execute([$ginId,$invoiceId,$a['location_id'],$take,$netEach,$weight]);
+                $picking[]=['invoice_no'=>$inv['invoice_no'],'location_code'=>$a['location_code'],'chests'=>$take,'weight'=>$weight];
+                $remaining-=$take;
+            }
+            $grandTotal+=$qty;$invoiceNos[]=$inv['invoice_no'];
+        }
+        $firstInvoice=$invoiceNos[0]??null;$pdo->prepare('UPDATE gins SET invoice_no=?,chests=? WHERE gin_id=?')->execute([$firstInvoice,$grandTotal,$ginId]);$pdo->commit();
+        logActivity('CREATE','GIN',$no.' | '.$grandTotal.' chests reserved pending gate pass');
+        ok(['gin_id'=>$ginId,'gin_no'=>$no,'turn_no'=>$turnNo,'chests'=>$grandTotal,'dispatch_status'=>'PENDING','picking_plan'=>$picking],'GIN saved. Stock is reserved but remains in its warehouse location until Gate Pass dispatch is confirmed.');
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();fail($e->getCode()==='23000'?'GIN number already exists':$e->getMessage(),400);}
+case 'gin_dispatch':
+    $u=requirePermission('warehousing.gin_picking');$d=body();$ginId=(int)($d['gin_id']??0);$ginNo=trim((string)($d['gin_no']??''));
+    if(!$ginId&&$ginNo==='')fail('gin_id or gin_no is required');
+    $pdo=db();$pdo->beginTransaction();
+    try{
+        $st=$pdo->prepare('SELECT * FROM gins WHERE '.($ginId?'gin_id=?':'gin_no=?').' FOR UPDATE');$st->execute([$ginId?:$ginNo]);$gin=$st->fetch();if(!$gin)throw new RuntimeException('GIN not found');
+        $ginId=(int)$gin['gin_id'];
+        if(($gin['dispatch_status']??'PENDING')==='DISPATCHED'){
+            $pdo->commit();
+            ok(['gin_id'=>$ginId,'gin_no'=>$gin['gin_no'],'dispatch_status'=>'DISPATCHED','gate_pass_no'=>$gin['gate_pass_no'],'gate_passed_at'=>$gin['gate_passed_at']],'Gate Pass already issued. No stock was deducted again.');
+        }
+        if(($gin['dispatch_status']??'PENDING')==='CANCELLED')throw new RuntimeException('Cancelled GIN cannot be dispatched');
+        $items=$pdo->prepare("SELECT gi.*,wi.invoice_no,wl.location_code,wl.occupied_bags,wl.capacity_bags,wl.current_weight,wl.status,wl.blocked
+                             FROM gin_items gi
+                             JOIN warehouse_invoices wi ON wi.invoice_id=gi.invoice_id
+                             JOIN warehouse_locations wl ON wl.location_id=gi.location_id
+                             WHERE gi.gin_id=? ORDER BY gi.gin_item_id FOR UPDATE");
+        $items->execute([$ginId]);$rows=$items->fetchAll();if(!$rows)throw new RuntimeException('GIN has no issuing lines');
+        $touchedInvoices=[];
+        foreach($rows as $row){
+            $qty=(int)$row['chests_issued'];$invoiceId=(int)$row['invoice_id'];$locationId=(int)$row['location_id'];$netEach=(float)$row['net_weight_each'];
+            $a=$pdo->prepare('SELECT * FROM invoice_location_allocations WHERE invoice_id=? AND location_id=? FOR UPDATE');$a->execute([$invoiceId,$locationId]);$alloc=$a->fetch();
+            if(!$alloc || (int)$alloc['chests_allocated']<$qty)throw new RuntimeException('Insufficient current stock at '.$row['location_code'].' for invoice '.$row['invoice_no']);
+            $left=(int)$alloc['chests_allocated']-$qty;
+            if($left<=0)$pdo->prepare('DELETE FROM invoice_location_allocations WHERE allocation_id=?')->execute([$alloc['allocation_id']]);
+            else $pdo->prepare('UPDATE invoice_location_allocations SET chests_allocated=?,weight_allocated=? WHERE allocation_id=?')->execute([$left,round($left*$netEach,2),$alloc['allocation_id']]);
+            $newOcc=max(0,(int)$row['occupied_bags']-$qty);$newWeight=max(0,(float)$row['current_weight']-($qty*$netEach));$cap=max(1,min(10,(int)$row['capacity_bags']));
+            $newStatus=(int)$row['blocked']===1?'BLOCKED':($newOcc<=0?'EMPTY':($newOcc>=$cap?'FULL':'PARTIAL'));
+            $pdo->prepare('UPDATE warehouse_locations SET occupied_bags=?,current_weight=?,status=? WHERE location_id=?')->execute([$newOcc,round($newWeight,2),$newStatus,$locationId]);
+            $weight=round($qty*$netEach,2);
+            $pdo->prepare('INSERT INTO invoice_stock_movements(invoice_id,location_id,movement_type,quantity_bags,weight,reference_type,reference_no,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?)')->execute([$invoiceId,$locationId,'OUT',$qty,$weight,'GATE_PASS',$gin['gin_no'],'Dispatched through Gate Pass',$u['user_id']]);
+            $touchedInvoices[$invoiceId]=true;
+        }
+        foreach(array_keys($touchedInvoices) as $invoiceId){
+            $next=$pdo->prepare('SELECT ila.location_id,wl.location_code FROM invoice_location_allocations ila JOIN warehouse_locations wl ON wl.location_id=ila.location_id WHERE ila.invoice_id=? AND ila.chests_allocated>0 ORDER BY ila.allocated_at,ila.allocation_id LIMIT 1');$next->execute([$invoiceId]);$primary=$next->fetch();
+            $pdo->prepare('UPDATE warehouse_invoices SET location_id=?,location_code=? WHERE invoice_id=?')->execute([$primary['location_id']??null,$primary['location_code']??null,$invoiceId]);
+        }
+        $gatePass=trim((string)($d['gate_pass_no']??''));if($gatePass==='')$gatePass='GP-'.date('Ymd-His').'-'.$ginId;
+        $pdo->prepare("UPDATE gins SET dispatch_status='DISPATCHED',gate_pass_no=?,gate_passed_at=NOW(),gate_passed_by=? WHERE gin_id=?")->execute([$gatePass,$u['user_id'],$ginId]);
+        $pdo->commit();logActivity('DISPATCH','GIN',$gin['gin_no'].' | Gate Pass '.$gatePass.' | stock released from warehouse locations');
+        ok(['gin_id'=>$ginId,'gin_no'=>$gin['gin_no'],'dispatch_status'=>'DISPATCHED','gate_pass_no'=>$gatePass,'gate_passed_at'=>date('Y-m-d H:i:s')],'Gate Pass issued. Dispatched stock has been removed from warehouse locations and is now visible in Issued Inquiry.');
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();fail($e->getMessage(),400);}
+case 'inquiry_issued':
+    requirePermission('warehousing.inquiry');$q=trim((string)($_GET['q']??''));$from=trim((string)($_GET['from']??''));$to=trim((string)($_GET['to']??''));
+    $sql="SELECT m.movement_id,m.created_at issued_at,m.reference_no gin_no,g.gate_pass_no,g.gate_passed_at,g.buyer,g.vehicle_no,wi.invoice_no,wi.mark,wi.selling_mark,wi.grade,wl.location_code,m.quantity_bags,m.weight
+          FROM invoice_stock_movements m
+          JOIN warehouse_invoices wi ON wi.invoice_id=m.invoice_id
+          LEFT JOIN warehouse_locations wl ON wl.location_id=m.location_id
+          LEFT JOIN gins g ON g.gin_no=m.reference_no
+          WHERE m.movement_type='OUT'";$params=[];
+    if($from!==''){$sql.=' AND DATE(m.created_at)>=?';$params[]=$from;}if($to!==''){$sql.=' AND DATE(m.created_at)<=?';$params[]=$to;}
+    if($q!==''){$like="%{$q}%";$sql.=' AND (m.reference_no LIKE ? OR g.gate_pass_no LIKE ? OR g.buyer LIKE ? OR g.vehicle_no LIKE ? OR wi.invoice_no LIKE ? OR wi.mark LIKE ? OR wi.grade LIKE ? OR wl.location_code LIKE ?)';$params=array_merge($params,[$like,$like,$like,$like,$like,$like,$like,$like]);}
+    $sql.=' ORDER BY m.created_at DESC,m.movement_id DESC LIMIT 500';$st=db()->prepare($sql);$st->execute($params);ok($st->fetchAll());
 case 'invoice_ai_recommend':
     requireAnyPermission(['warehousing.invoice_add','warehousing.invoice_edit','warehousing.ai_allocation']);
     $d = $method === 'POST' ? body() : $_GET;
@@ -533,10 +742,12 @@ case 'invoice_create':
     $u=requirePermission('warehousing.invoice_add');
     $d=body();
     $no=trim((string)($d['invoiceNo']??''));
+    $arrivalTurnNo=trim((string)($d['turnNo']??$d['arrivalTurnNo']??''));
     $chests=max(0,(int)($d['chests']??0));
     $netEachRaw=$d['netWeightEach']??null;
     $netEach=($netEachRaw!==null&&$netEachRaw!=='')?(float)$netEachRaw:0.0;
     if($no==='')fail('Invoice number is required');
+    if($arrivalTurnNo==='')fail('Arrival / Turn Number is required so GRN can auto-load the arrival');
     if($chests<=0)fail('Chests must be greater than 0');
     if($netEach<=0)fail('Net Weight Each must be greater than 0 so net weight and safe location can be calculated');
     $totalNetWeight=round($chests*$netEach,2); // authoritative backend calculation
@@ -565,15 +776,16 @@ case 'invoice_create':
     $pdo=db();
     $pdo->beginTransaction();
     try{
-        $st=$pdo->prepare('INSERT INTO warehouse_invoices(invoice_year,invoice_no,mark,selling_mark,grade,packing_type,chest_type,broker,chests,weight_per_chest,net_weight_each,total_net_weight,total_gross_weight,moisture_content,mfd_date,sample_drawn,reprint,exportable,colour_separated,store,invoice_date,location_id,location_code,allocation_score,allocation_model,allocation_explanation,allocation_type,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+        $st=$pdo->prepare('INSERT INTO warehouse_invoices(invoice_year,invoice_no,mark,selling_mark,grade,packing_type,chest_type,broker,buyer,chests,weight_per_chest,net_weight_each,total_net_weight,total_gross_weight,moisture_content,mfd_date,sample_drawn,reprint,exportable,colour_separated,store,invoice_date,arrival_turn_no,arrival_vehicle_no,arrival_driver_name,arrival_driver_nic,location_id,location_code,allocation_score,allocation_model,allocation_explanation,allocation_type,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
         $st->execute([
             (int)($d['invoiceYear']??date('Y')),$no,$d['mark']??null,$d['sellingMark']??null,$d['grade']??null,
-            $d['packingType']??null,$d['chestType']??null,$d['broker']??null,$chests,
+            $d['packingType']??null,$d['chestType']??null,$d['broker']??null,$d['buyer']??null,$chests,
             (float)($d['weightPerChest']??0),$netEach,$totalNetWeight,
             isset($d['totalGrossWeight'])&&$d['totalGrossWeight']!==''?(float)$d['totalGrossWeight']:null,
             isset($d['moistureContent'])&&$d['moistureContent']!==''?(float)$d['moistureContent']:null,
             $d['mfdDate']??null,!empty($d['sampleDrawn'])?1:0,!empty($d['reprint'])?1:0,!empty($d['exportable'])?1:0,!empty($d['colourSeparated'])?1:0,
             $d['store']??null,$d['date']??date('Y-m-d'),
+            $arrivalTurnNo,($d['vehicleNo']??$d['arrivalVehicleNo']??null)?:null,($d['driverName']??$d['arrivalDriverName']??null)?:null,($d['driverNic']??$d['arrivalDriverNic']??null)?:null,
             $primary['location_id']??null,$primary['location_code']??null,$primary['score']??null,
             $autoAllocate?($recommendation['model_version']??'INVOICE-WEIGHTED-2026.2'):($selectedLocation?'MANUAL':null),
             $explanation,$plan?$allocationType:null,$u['user_id']
@@ -598,7 +810,11 @@ case 'invoice_list':
     $year=trim((string)($_GET['year']??''));
     $no=trim((string)($_GET['invoice_no']??''));
     $q=trim((string)($_GET['q']??''));
-    $sql="SELECT wi.*,COALESCE(GROUP_CONCAT(CONCAT(wl.location_code,' (',ila.chests_allocated,')') ORDER BY wl.location_code SEPARATOR ', '),wi.location_code) allocated_locations,COALESCE(SUM(ila.chests_allocated),0) allocated_chests
+    $sql="SELECT wi.*,
+                 COALESCE((SELECT COALESCE(NULLIF(u1.full_name,''),u1.username) FROM users u1 WHERE u1.user_id=wi.created_by LIMIT 1),'') entry_user,
+                 COALESCE((SELECT COALESCE(NULLIF(u2.full_name,''),u2.username) FROM activity_logs al JOIN users u2 ON u2.user_id=al.user_id WHERE al.action='UPDATE' AND al.module='INVOICE' AND al.description=CONCAT('Updated invoice #',wi.invoice_id) ORDER BY al.log_id DESC LIMIT 1),'') updated_user,
+                 COALESCE(GROUP_CONCAT(CONCAT(wl.location_code,' (',ila.chests_allocated,')') ORDER BY wl.location_code SEPARATOR ', '),wi.location_code) allocated_locations,
+                 COALESCE(SUM(ila.chests_allocated),0) allocated_chests
           FROM warehouse_invoices wi
           LEFT JOIN invoice_location_allocations ila ON ila.invoice_id=wi.invoice_id
           LEFT JOIN warehouse_locations wl ON wl.location_id=ila.location_id
@@ -606,20 +822,26 @@ case 'invoice_list':
     $p=[];
     if($year!==''){$sql.=' AND wi.invoice_year=?';$p[]=(int)$year;}
     if($no!==''){$sql.=' AND wi.invoice_no LIKE ?';$p[]="%$no%";}
-    if($q!==''){$like="%$q%";$sql.=' AND (wi.invoice_no LIKE ? OR wi.mark LIKE ? OR wi.selling_mark LIKE ? OR wi.grade LIKE ? OR wi.packing_type LIKE ? OR wi.broker LIKE ? OR wi.store LIKE ? OR wi.location_code LIKE ? OR EXISTS(SELECT 1 FROM invoice_location_allocations qila JOIN warehouse_locations qwl ON qwl.location_id=qila.location_id WHERE qila.invoice_id=wi.invoice_id AND qwl.location_code LIKE ?))';$p=array_merge($p,[$like,$like,$like,$like,$like,$like,$like,$like,$like]);}
+    if($q!==''){$like="%$q%";$sql.=' AND (wi.invoice_no LIKE ? OR wi.mark LIKE ? OR wi.selling_mark LIKE ? OR wi.grade LIKE ? OR wi.packing_type LIKE ? OR wi.broker LIKE ? OR wi.buyer LIKE ? OR wi.store LIKE ? OR wi.location_code LIKE ? OR EXISTS(SELECT 1 FROM invoice_location_allocations qila JOIN warehouse_locations qwl ON qwl.location_id=qila.location_id WHERE qila.invoice_id=wi.invoice_id AND qwl.location_code LIKE ?))';$p=array_merge($p,[$like,$like,$like,$like,$like,$like,$like,$like,$like,$like]);}
     $sql.=' GROUP BY wi.invoice_id ORDER BY wi.invoice_id DESC LIMIT 200';
     $st=db()->prepare($sql);$st->execute($p);ok($st->fetchAll());
 case 'invoice_get':
     requireAnyPermission(['warehousing.invoice_edit','warehousing.invoice_download','warehousing.inquiry']);
     $id=intParam('id');$no=trim((string)($_GET['invoice_no']??''));if(!$id&&$no==='')fail('id or invoice_no is required');
-    $sql="SELECT wi.*,COALESCE(GROUP_CONCAT(CONCAT(wl.location_code,' (',ila.chests_allocated,')') ORDER BY wl.location_code SEPARATOR ', '),wi.location_code) allocated_locations,COALESCE(SUM(ila.chests_allocated),0) allocated_chests
-          FROM warehouse_invoices wi LEFT JOIN invoice_location_allocations ila ON ila.invoice_id=wi.invoice_id LEFT JOIN warehouse_locations wl ON wl.location_id=ila.location_id
+    $sql="SELECT wi.*,
+                 COALESCE((SELECT COALESCE(NULLIF(u1.full_name,''),u1.username) FROM users u1 WHERE u1.user_id=wi.created_by LIMIT 1),'') entry_user,
+                 COALESCE((SELECT COALESCE(NULLIF(u2.full_name,''),u2.username) FROM activity_logs al JOIN users u2 ON u2.user_id=al.user_id WHERE al.action='UPDATE' AND al.module='INVOICE' AND al.description=CONCAT('Updated invoice #',wi.invoice_id) ORDER BY al.log_id DESC LIMIT 1),'') updated_user,
+                 COALESCE(GROUP_CONCAT(CONCAT(wl.location_code,' (',ila.chests_allocated,')') ORDER BY wl.location_code SEPARATOR ', '),wi.location_code) allocated_locations,
+                 COALESCE(SUM(ila.chests_allocated),0) allocated_chests
+          FROM warehouse_invoices wi
+          LEFT JOIN invoice_location_allocations ila ON ila.invoice_id=wi.invoice_id
+          LEFT JOIN warehouse_locations wl ON wl.location_id=ila.location_id
           WHERE ".($id?'wi.invoice_id=?':'wi.invoice_no=?')." GROUP BY wi.invoice_id";
     $st=db()->prepare($sql);$st->execute([$id?:$no]);$row=$st->fetch();if(!$row)fail('Invoice not found',404);ok($row);
 case 'invoice_update':
     $u=requirePermission('warehousing.invoice_edit');$d=body();$id=(int)($d['invoice_id']??$d['invoiceId']??0);if(!$id)fail('invoice_id is required');
     $curSt=db()->prepare('SELECT * FROM warehouse_invoices WHERE invoice_id=?');$curSt->execute([$id]);$cur=$curSt->fetch();if(!$cur)fail('Invoice not found',404);
-    $map=['invoiceYear'=>'invoice_year','mark'=>'mark','sellingMark'=>'selling_mark','grade'=>'grade','packingType'=>'packing_type','chestType'=>'chest_type','broker'=>'broker','chests'=>'chests','weightPerChest'=>'weight_per_chest','netWeightEach'=>'net_weight_each','totalGrossWeight'=>'total_gross_weight','moistureContent'=>'moisture_content','mfdDate'=>'mfd_date','store'=>'store','date'=>'invoice_date'];
+    $map=['invoiceYear'=>'invoice_year','mark'=>'mark','sellingMark'=>'selling_mark','grade'=>'grade','packingType'=>'packing_type','chestType'=>'chest_type','broker'=>'broker','buyer'=>'buyer','chests'=>'chests','weightPerChest'=>'weight_per_chest','netWeightEach'=>'net_weight_each','totalGrossWeight'=>'total_gross_weight','moistureContent'=>'moisture_content','mfdDate'=>'mfd_date','store'=>'store','date'=>'invoice_date','turnNo'=>'arrival_turn_no','arrivalTurnNo'=>'arrival_turn_no','vehicleNo'=>'arrival_vehicle_no','arrivalVehicleNo'=>'arrival_vehicle_no','driverName'=>'arrival_driver_name','arrivalDriverName'=>'arrival_driver_name','driverNic'=>'arrival_driver_nic','arrivalDriverNic'=>'arrival_driver_nic'];
     $sets=[];$params=[];
     foreach($map as $k=>$col){if(array_key_exists($k,$d)){$sets[]="$col=?";$val=$d[$k];$params[]=($val==='')?null:$val;}}
     foreach(['sampleDrawn'=>'sample_drawn','reprint'=>'reprint','exportable'=>'exportable','colourSeparated'=>'colour_separated'] as $k=>$col){if(array_key_exists($k,$d)){$sets[]="$col=?";$params[]=!empty($d[$k])?1:0;}}
@@ -627,7 +849,7 @@ case 'invoice_update':
         $calcChests=(int)($d['chests']??$cur['chests']);$calcEach=(float)($d['netWeightEach']??$cur['net_weight_each']??0);$sets[]='total_net_weight=?';$params[]=round($calcChests*$calcEach,2);
     }
     if(!$sets)fail('No fields to update');
-    $params[]=$id;$st=db()->prepare('UPDATE warehouse_invoices SET '.implode(',',$sets).' WHERE invoice_id=?');$st->execute($params);
+$params[]=$id;$st=db()->prepare('UPDATE warehouse_invoices SET '.implode(',',$sets).' WHERE invoice_id=?');$st->execute($params);
     logActivity('UPDATE','INVOICE','Updated invoice #'.$id);ok([],'Invoice updated');
 case 'invoice_location_allocate':
     $u=requireAnyPermission(['warehousing.invoice_add','warehousing.invoice_edit','warehousing.ai_allocation']);$d=body();$id=(int)($d['invoice_id']??$d['invoiceId']??0);$loc=(int)($d['location_id']??$d['locationId']??0);
@@ -670,10 +892,8 @@ case 'location_unallocate':
         ok([],'Location released');
     }catch(Throwable $e){ if($pdo->inTransaction())$pdo->rollBack(); fail($e->getMessage(),400); }
 case 'grn_list':
-    requireAnyPermission(['warehousing.grn_print','warehousing.grn_add_edit']);$date=trim((string)($_GET['date']??''));$no=trim((string)($_GET['grn_no']??''));
-    $sql='SELECT * FROM grns WHERE 1=1';$p=[];
-    if($date!==''){$sql.=' AND grn_date=?';$p[]=$date;}
-    if($no!==''){$sql.=' AND grn_no LIKE ?';$p[]="%$no%";}
-    $sql.=' ORDER BY grn_id DESC LIMIT 200';$st=db()->prepare($sql);$st->execute($p);ok($st->fetchAll());
+    requireAnyPermission(['warehousing.grn_print','warehousing.grn_add_edit']);$date=trim((string)($_GET['date']??''));$no=trim((string)($_GET['grn_no']??''));$q=trim((string)($_GET['q']??''));$amalgamation=isset($_GET['amalgamation'])?(int)$_GET['amalgamation']:null;$brokerOnly=!empty($_GET['broker_only']);
+    $sql="SELECT g.grn_id,g.grn_no,g.grn_date,g.store,g.turn_no,g.vehicle_no,g.driver_name,g.driver_nic,g.supplier,g.source_type,g.broker,g.buyer,g.mark,g.amalgamation,g.remarks,g.created_at,COALESCE(SUM(gi.received_chests),g.chests) chests,COUNT(DISTINCT gi.invoice_id) invoice_count,GROUP_CONCAT(DISTINCT wi.invoice_no ORDER BY wi.invoice_no SEPARATOR ', ') invoice_numbers,GROUP_CONCAT(DISTINCT wi.selling_mark ORDER BY wi.selling_mark SEPARATOR ', ') selling_marks FROM grns g LEFT JOIN grn_items gi ON gi.grn_id=g.grn_id LEFT JOIN warehouse_invoices wi ON wi.invoice_id=gi.invoice_id WHERE 1=1";$p=[];
+    if($date!==''){$sql.=' AND g.grn_date=?';$p[]=$date;}if($no!==''){$sql.=' AND g.grn_no LIKE ?';$p[]="%{$no}%";}if($amalgamation!==null){$sql.=' AND g.amalgamation=?';$p[]=$amalgamation;}if($brokerOnly){$sql.=" AND g.source_type='BROKER'";}if($q!==''){$like="%{$q}%";$sql.=' AND (g.grn_no LIKE ? OR g.turn_no LIKE ? OR g.broker LIKE ? OR g.buyer LIKE ? OR g.mark LIKE ? OR g.vehicle_no LIKE ?)';$p=array_merge($p,[$like,$like,$like,$like,$like,$like]);}$sql.=' GROUP BY g.grn_id ORDER BY g.grn_date DESC,g.grn_id DESC LIMIT 300';$st=db()->prepare($sql);$st->execute($p);ok($st->fetchAll());
 default: fail('Unknown API action',404);
 }

@@ -43,6 +43,7 @@ INSERT INTO permission_catalog(permission_key,module_name,group_name,permission_
 ('brokering.sms','BROKERING','Communication','SMS',NULL,100),
 
 ('master.access_manager','BROKERING MASTER','Administration','Access Manager','/master/access-manager',110),
+('master.broker','BROKERING MASTER','Master Data','Broker Master','/master/broker',115),
 ('master.mark','BROKERING MASTER','Master Data','Mark Master','/master/mark',120),
 ('master.grade','BROKERING MASTER','Master Data','Grade Master','/master/grade',130),
 ('master.packing_type','BROKERING MASTER','Master Data','Packing Type Master','/master/packing-type',140),
@@ -52,14 +53,15 @@ INSERT INTO permission_catalog(permission_key,module_name,group_name,permission_
 ('warehousing.invoice_add','WAREHOUSING','Invoice Entry','Invoice Entry - Add New','/warehousing/bin-operation/invoice-entry/add',220),
 ('warehousing.invoice_edit','WAREHOUSING','Invoice Entry','Invoice Entry - Edit','/warehousing/bin-operation/invoice-entry/edit',230),
 ('warehousing.invoice_download','WAREHOUSING','Invoice Entry','Invoice Entry - Download','/warehousing/bin-operation/invoice-entry/download',240),
-('warehousing.grn_print','WAREHOUSING','GRN','GRN Print / Unloading List','/warehousing/bin-operation/grn/print',250),
-('warehousing.grn_add_edit','WAREHOUSING','GRN','Add / Edit GRN','/warehousing/bin-operation/grn/add-edit',260),
+('warehousing.grn_print','WAREHOUSING','GRN','Unloading / GRN Print','/warehousing/bin-operation/grn/print',250),
+('warehousing.grn_add_edit','WAREHOUSING','GRN','Invoice Chest Receiving / GRN','/warehousing/bin-operation/grn/add-edit',260),
 ('warehousing.chest_location','WAREHOUSING','GRN','Chest Location Details','/warehousing/bin-operation/grn/chest-location',270),
 ('warehousing.turn_number','WAREHOUSING','GRN','Turn Number Allocation','/warehousing/bin-operation/grn/turn-number',280),
-('warehousing.gin_add','WAREHOUSING','GIN','Add GIN','/warehousing/bin-operation/gin/add',290),
-('warehousing.gin_picking','WAREHOUSING','GIN','Picking List / GIN Print','/warehousing/bin-operation/gin/picking-list',300),
+('warehousing.gin_add','WAREHOUSING','GIN','Invoice Chest Issuing / GIN','/warehousing/bin-operation/gin/add',290),
+('warehousing.gin_picking','WAREHOUSING','GIN','Loading / Picking / GIN Print','/warehousing/bin-operation/gin/picking-list',300),
 ('warehousing.reports','WAREHOUSING','Information','Reports','/warehousing/reports',310),
-('warehousing.inquiry','WAREHOUSING','Information','Inquiry','/warehousing/inquiry',320),
+('warehousing.inquiry','WAREHOUSING','Information','Stock / Invoice Inquiry','/warehousing/inquiry',320),
+('warehousing.location_inquiry','WAREHOUSING','Information','Location Inquiry','/warehousing/inquiry/location',325),
 ('warehousing.ai_allocation','WAREHOUSING','Optimization','AI Location Allocation','/warehousing/ai-allocation',330),
 ('warehousing.master','WAREHOUSING','Administration','Warehouse Master','/warehousing/master',340)
 ON DUPLICATE KEY UPDATE
@@ -90,6 +92,7 @@ ON DUPLICATE KEY UPDATE has_access=1;
 -- Admin is always allowed by backend policy, but this keeps role reports clear.
 INSERT INTO role_permissions(role,page_key,has_access) VALUES
 ('ADMIN','master.access_manager',1),
+('ADMIN','master.broker',1),
 ('ADMIN','master.mark',1),
 ('ADMIN','master.grade',1),
 ('ADMIN','master.packing_type',1),

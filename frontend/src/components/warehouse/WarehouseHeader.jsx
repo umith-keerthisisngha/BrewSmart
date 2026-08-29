@@ -12,23 +12,20 @@ const BIN_OPERATION_MENU = [
     items: [
       { label: "Add New", path: "/warehousing/bin-operation/invoice-entry/add", permission: "warehousing.invoice_add" },
       { label: "Edit", path: "/warehousing/bin-operation/invoice-entry/edit", permission: "warehousing.invoice_edit" },
-      { label: "Download", path: "/warehousing/bin-operation/invoice-entry/download", permission: "warehousing.invoice_download" },
     ],
   },
   {
     heading: "GRN",
     items: [
-      { label: "GRN Print/Unloading List", path: "/warehousing/bin-operation/grn/print", permission: "warehousing.grn_print" },
-      { label: "Add/Edit GRN", path: "/warehousing/bin-operation/grn/add-edit", permission: "warehousing.grn_add_edit" },
-      { label: "Chest Location Details", path: "/warehousing/bin-operation/grn/chest-location", permission: "warehousing.chest_location" },
-      { label: "Turn Number Allocation", path: "/warehousing/bin-operation/grn/turn-number", permission: "warehousing.turn_number" },
+      { label: "Unloading / GRN Print", path: "/warehousing/bin-operation/grn/print", permission: "warehousing.grn_print" },
+      { label: "Invoice Chest Receiving / GRN", path: "/warehousing/bin-operation/grn/add-edit", permission: "warehousing.grn_add_edit" },
     ],
   },
   {
     heading: "GIN",
     items: [
-      { label: "Add GIN", path: "/warehousing/bin-operation/gin/add", permission: "warehousing.gin_add" },
-      { label: "Picking List/GIN Print", path: "/warehousing/bin-operation/gin/picking-list", permission: "warehousing.gin_picking" },
+      { label: "Invoice Chest Issuing / GIN", path: "/warehousing/bin-operation/gin/add", permission: "warehousing.gin_add" },
+      { label: "Loading / Picking / GIN Print", path: "/warehousing/bin-operation/gin/picking-list", permission: "warehousing.gin_picking" },
     ],
   },
 ];
@@ -36,6 +33,7 @@ const BIN_OPERATION_MENU = [
 export function WarehouseHeader({ displayName, active }) {
   const navigate = useNavigate();
   const [binMenuOpen, setBinMenuOpen] = useState(false);
+  const [inquiryMenuOpen, setInquiryMenuOpen] = useState(false);
   const { loading, can } = usePermissions();
 
   const allowedGroups = useMemo(
@@ -114,11 +112,28 @@ export function WarehouseHeader({ displayName, active }) {
           {can("warehousing.reports") && (
             <span className={active === "reports" ? "active" : ""} onClick={() => navigate("/warehousing/reports")}>REPORTS</span>
           )}
-          {can("warehousing.inquiry") && (
-            <span className={active === "inquiry" ? "active" : ""} onClick={() => navigate("/warehousing/inquiry")}>INQUIRY</span>
-          )}
-          {can("warehousing.ai_allocation") && (
-            <span className={active === "ai" ? "active" : ""} onClick={() => navigate("/warehousing/ai-allocation")}>AI ALLOCATION</span>
+          {(can("warehousing.inquiry") || can("warehousing.location_inquiry")) && (
+            <div
+              className="wh-nav-dropdown wh-inquiry-dropdown"
+              onMouseEnter={() => setInquiryMenuOpen(true)}
+              onMouseLeave={() => setInquiryMenuOpen(false)}
+            >
+              <span className={active === "inquiry" ? "active" : ""}>INQUIRY</span>
+              {inquiryMenuOpen && (
+                <div className="wh-inquiry-menu">
+                  {can("warehousing.inquiry") && (
+                    <div className="wh-mega-item" onClick={() => { setInquiryMenuOpen(false); navigate("/warehousing/inquiry"); }}>
+                      Stock / Invoice Inquiry
+                    </div>
+                  )}
+                  {can("warehousing.location_inquiry") && (
+                    <div className="wh-mega-item" onClick={() => { setInquiryMenuOpen(false); navigate("/warehousing/inquiry/location"); }}>
+                      Location Inquiry
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
           {can("warehousing.master") && (
             <span className={active === "master" ? "active" : ""} onClick={() => navigate("/warehousing/master")}>MASTER</span>

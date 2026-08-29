@@ -8,15 +8,12 @@ import ProtectedRoute from "./components/ProtectedRoute";
 
 import Reports from "./pages/warehouse/Reports";
 import InvoiceInquiry from "./pages/warehouse/InvoiceInquiry";
-import ChestLocationDetails from "./pages/warehouse/ChestLocationDetails";
+import LocationInquiry from "./pages/warehouse/LocationInquiry";
 import WarehouseMaster from "./pages/warehouse/WarehouseMaster";
-import AIOptimization from "./pages/warehouse/AIOptimization";
 import InvoiceEntryAdd from "./pages/warehouse/bin-operation/InvoiceEntryAdd";
 import InvoiceEntryEdit from "./pages/warehouse/bin-operation/InvoiceEntryEdit";
-import InvoiceEntryDownload from "./pages/warehouse/bin-operation/InvoiceEntryDownload";
 import GRNPrint from "./pages/warehouse/bin-operation/GRNPrint";
 import GRNAddEdit from "./pages/warehouse/bin-operation/GRNAddEdit";
-import TurnNumberAllocation from "./pages/warehouse/bin-operation/TurnNumberAllocation";
 import GINAdd from "./pages/warehouse/bin-operation/GINAdd";
 import GINPickingList from "./pages/warehouse/bin-operation/GINPickingList";
 
@@ -37,8 +34,8 @@ function App() {
 
         <Route path="/warehousing/reports" element={secure("warehousing.reports", <Reports />)} />
         <Route path="/warehousing/inquiry" element={secure("warehousing.inquiry", <InvoiceInquiry />)} />
+        <Route path="/warehousing/inquiry/location" element={secure("warehousing.location_inquiry", <LocationInquiry />)} />
         <Route path="/warehousing/master" element={secure("warehousing.master", <WarehouseMaster />)} />
-        <Route path="/warehousing/ai-allocation" element={secure("warehousing.ai_allocation", <AIOptimization />)} />
 
         <Route
           path="/warehousing/bin-operation/invoice-entry/add"
@@ -49,24 +46,12 @@ function App() {
           element={secure("warehousing.invoice_edit", <InvoiceEntryEdit />)}
         />
         <Route
-          path="/warehousing/bin-operation/invoice-entry/download"
-          element={secure("warehousing.invoice_download", <InvoiceEntryDownload />)}
-        />
-        <Route
           path="/warehousing/bin-operation/grn/print"
           element={secure("warehousing.grn_print", <GRNPrint />)}
         />
         <Route
           path="/warehousing/bin-operation/grn/add-edit"
           element={secure("warehousing.grn_add_edit", <GRNAddEdit />)}
-        />
-        <Route
-          path="/warehousing/bin-operation/grn/chest-location"
-          element={secure("warehousing.chest_location", <ChestLocationDetails />)}
-        />
-        <Route
-          path="/warehousing/bin-operation/grn/turn-number"
-          element={secure("warehousing.turn_number", <TurnNumberAllocation />)}
         />
         <Route
           path="/warehousing/bin-operation/gin/add"
@@ -83,6 +68,7 @@ function App() {
           path="/master/access-manager"
           element={secure("master.access_manager", <Master section="access-manager" />)}
         />
+        <Route path="/master/broker" element={secure("master.broker", <Master section="broker" />)} />
         <Route path="/master/mark" element={secure("master.mark", <Master section="mark" />)} />
         <Route path="/master/grade" element={secure("master.grade", <Master section="grade" />)} />
         <Route

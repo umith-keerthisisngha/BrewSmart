@@ -12,7 +12,7 @@ const TABS = [
   { key: "stock", label: "Stock", live: true },
   { key: "location", label: "Location", live: true },
   { key: "received", label: "Received" },
-  { key: "issued", label: "Issued" },
+  { key: "issued", label: "Issued", live: true },
   { key: "history", label: "History" },
 ];
 
@@ -29,7 +29,8 @@ const INVOICE_COLUMNS = [
   { key: "total_net_weight", label: "Total Net kg" },
   { key: "allocated_locations", label: "Location(s)" },
   { key: "allocation_model", label: "Allocation" },
-  { key: "allocation_score", label: "Score %" },
+  { key: "entry_user", label: "Entry User" },
+  { key: "updated_user", label: "Updated User" },
 ];
 
 const STOCK_COLUMNS = [
@@ -53,6 +54,20 @@ const LOCATION_COLUMNS = [
   { key: "invoice_chests", label: "Invoice Chests" },
   { key: "lot_number", label: "Stock Lot" },
   { key: "bags_allocated", label: "Stock Bags" },
+];
+
+const ISSUED_COLUMNS = [
+  { key: "issued_at", label: "Issued At" },
+  { key: "gin_no", label: "GIN No" },
+  { key: "gate_pass_no", label: "Gate Pass" },
+  { key: "invoice_no", label: "Invoice" },
+  { key: "buyer", label: "Buyer" },
+  { key: "mark", label: "Mark" },
+  { key: "grade", label: "Grade" },
+  { key: "location_code", label: "From Location" },
+  { key: "quantity_bags", label: "Issued Bags" },
+  { key: "weight", label: "Issued Weight kg" },
+  { key: "vehicle_no", label: "Vehicle" },
 ];
 
 function InvoiceSearchPanel({ onResults }) {
@@ -120,6 +135,48 @@ function StockSearchPanel({ onResults }) {
   );
 }
 
+function IssuedSearchPanel({ onResults }) {
+  const [q, setQ] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const runSearch = async () => {
+    setBusy(true); setError("");
+    try {
+      const res = await axios.get(`${API}/inquiry/issued.php`, { params: { q, from, to }, withCredentials: true });
+      if (res.data.success) onResults(res.data.data || []);
+      else setError(res.data.message || "Search failed.");
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not load issued stock.");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="wp-panel">
+      <div className="wp-panel-header">Issued / Dispatched Stock Inquiry</div>
+      <div className="wp-panel-body">
+        <div className="inq-grid-2">
+          <label className="inq-field">
+            <span>GIN / Gate Pass / Invoice / Buyer / Location</span>
+            <input className="wp-input" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runSearch()} />
+          </label>
+          <div className="inq-grid-2">
+            <label className="inq-field"><span>From</span><input className="wp-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+            <label className="inq-field"><span>To</span><input className="wp-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+          </div>
+        </div>
+        {error && <p className="wp-hint" style={{ color: "#b91c1c", fontWeight: 700 }}>{error}</p>}
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button className="wp-btn wp-btn-primary" onClick={runSearch} disabled={busy}>{busy ? "Searching..." : "Search Issued"}</button>
+          <button className="wp-btn wp-btn-outline" onClick={() => { setQ(""); setFrom(""); setTo(""); }}>Clear</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LocationSearchPanel({ onResults }) {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
@@ -174,12 +231,17 @@ export default function InvoiceInquiry() {
         const res = await axios.get(`${API}/invoices/list.php`, { withCredentials: true });
         if (res.data.success) setRows(res.data.data || []);
       } catch (err) { setInitialError(err.response?.data?.message || "Could not load saved invoices."); }
+    } else if (key === "issued") {
+      try {
+        const res = await axios.get(`${API}/inquiry/issued.php`, { withCredentials: true });
+        if (res.data.success) setRows(res.data.data || []);
+      } catch (err) { setInitialError(err.response?.data?.message || "Could not load issued stock."); }
     }
   };
 
   if (loading) return null;
   const activeTabDef = TABS.find((t) => t.key === activeTab);
-  const columns = activeTab === "invoice" ? INVOICE_COLUMNS : activeTab === "location" ? LOCATION_COLUMNS : STOCK_COLUMNS;
+  const columns = activeTab === "invoice" ? INVOICE_COLUMNS : activeTab === "location" ? LOCATION_COLUMNS : activeTab === "issued" ? ISSUED_COLUMNS : STOCK_COLUMNS;
 
   return (
     <div className="wp-page">
@@ -190,6 +252,7 @@ export default function InvoiceInquiry() {
         {activeTab === "invoice" && <InvoiceSearchPanel onResults={setRows} />}
         {activeTab === "stock" && <StockSearchPanel onResults={setRows} />}
         {activeTab === "location" && <LocationSearchPanel onResults={setRows} />}
+        {activeTab === "issued" && <IssuedSearchPanel onResults={setRows} />}
         {initialError && <p className="wp-hint" style={{ color: "#b91c1c", fontWeight: 700 }}>{initialError}</p>}
 
         <div className="wp-tabs" style={{ marginTop: 18 }}>
@@ -210,7 +273,7 @@ export default function InvoiceInquiry() {
                   {rows.length === 0 ? (
                     <tr><td colSpan={columns.length} className="wp-table-empty">No {activeTabDef.label.toLowerCase()} found.</td></tr>
                   ) : rows.map((r, i) => (
-                    <tr key={r.invoice_id || r.location_id || r.inventory_id || i}>
+                    <tr key={r.invoice_id || r.location_id || r.inventory_id || r.movement_id || i}>
                       {columns.map((c) => <td key={c.key}>{r[c.key] ?? ""}</td>)}
                     </tr>
                   ))}

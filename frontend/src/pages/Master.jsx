@@ -36,6 +36,21 @@ const MASTER_CONFIG = {
     codeLabel: "Grade Code",
     nameLabel: "Grade Name",
   },
+  broker: {
+    title: "Broker Master",
+    permission: "master.broker",
+    load: async () => {
+      const res = await axios.get(`${API}/master/brokers-list.php`, { withCredentials: true });
+      return res.data.data || [];
+    },
+    create: (code, name) =>
+      axios.post(`${API}/master/brokers-create.php`, { broker_code: code, broker_name: name }, { withCredentials: true }),
+    codeKey: "broker_code",
+    nameKey: "broker_name",
+    idKey: "broker_id",
+    codeLabel: "Broker Code",
+    nameLabel: "Broker Name",
+  },
   "packing-type": {
     title: "Packing Type Master",
     permission: "master.packing_type",

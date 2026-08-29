@@ -246,3 +246,13 @@
     min-width: 220px;
   }
 }
+
+/* BrewSmart Inquiry dropdown */
+.wh-inquiry-dropdown { position: relative; }
+.wh-inquiry-menu {
+  position: absolute; top: 100%; right: 0; min-width: 230px; z-index: 1000;
+  background: #181b18; border: 1px solid rgba(129, 188, 80, .35);
+  box-shadow: 0 14px 28px rgba(0,0,0,.28); padding: 8px 0;
+}
+.wh-inquiry-menu .wh-mega-item { color: #f5f7f3; padding: 11px 16px; white-space: nowrap; }
+.wh-inquiry-menu .wh-mega-item:hover { background: #315f20; color: #fff; }
