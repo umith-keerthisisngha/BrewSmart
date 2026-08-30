@@ -1,9 +1,10 @@
+import { API_BASE as API } from "../config/api";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import brewSmartLogo from "../assets/brewsmart-logo.png";
 import "./Master.css";
 
-const API = "http://localhost/BrewSmart/backend/api";
 
 const MASTER_CONFIG = {
   mark: {
@@ -28,8 +29,11 @@ const MASTER_CONFIG = {
       const res = await axios.get(`${API}/meta.php`, { withCredentials: true });
       return res.data.data?.grades || [];
     },
-    create: (code, name) =>
-      axios.post(`${API}/master/grade-create.php`, { grade_code: code, grade_name: name }, { withCredentials: true }),
+    create: (code, name, extra = {}) =>
+      axios.post(`${API}/master/grade-create.php`, { grade_code: code, grade_name: name, ...extra }, { withCredentials: true }),
+    updateProfile: (grade_id, extra = {}) =>
+      axios.post(`${API}/master/grade-update.php`, { grade_id, ...extra }, { withCredentials: true }),
+    hasStorageProfile: true,
     codeKey: "grade_code",
     nameKey: "grade_name",
     idKey: "grade_id",
@@ -50,6 +54,21 @@ const MASTER_CONFIG = {
     idKey: "broker_id",
     codeLabel: "Broker Code",
     nameLabel: "Broker Name",
+  },
+  buyer: {
+    title: "Buyer Master",
+    permission: "master.buyer",
+    load: async () => {
+      const res = await axios.get(`${API}/master/buyers-list.php`, { withCredentials: true });
+      return res.data.data || [];
+    },
+    create: (code, name) =>
+      axios.post(`${API}/master/buyers-create.php`, { buyer_code: code, buyer_name: name }, { withCredentials: true }),
+    codeKey: "buyer_code",
+    nameKey: "buyer_name",
+    idKey: "buyer_id",
+    codeLabel: "Buyer Code",
+    nameLabel: "Buyer Name",
   },
   "packing-type": {
     title: "Packing Type Master",
@@ -73,8 +92,7 @@ function MasterHeader({ displayName, role, title, onBack }) {
     <>
       <header className="master-topbar">
         <button className="master-brand" type="button" onClick={onBack}>
-          <span className="master-leaf">🍃</span>
-          <span>Brew<span>Smart</span></span>
+          <img className="master-brand-logo" src={brewSmartLogo} alt="BrewSmart" />
         </button>
         <div className="master-user-block">
           <div>
@@ -304,6 +322,10 @@ function SimpleMaster({ type }) {
   const [loading, setLoading] = useState(true);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [packingDensity, setPackingDensity] = useState("");
+  const [minBagWeight, setMinBagWeight] = useState("");
+  const [maxBagWeight, setMaxBagWeight] = useState("");
+  const [editingGradeId, setEditingGradeId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
@@ -327,12 +349,28 @@ function SimpleMaster({ type }) {
       setMessage({ type: "error", text: `${config.codeLabel} is required.` });
       return;
     }
+    if (config.hasStorageProfile) {
+      const density = Number(packingDensity);
+      const minW = Number(minBagWeight);
+      const maxW = Number(maxBagWeight);
+      if (!(density > 0)) return setMessage({ type: "error", text: "Packing Density must be greater than 0." });
+      if (!(minW > 0) || !(maxW > 0)) return setMessage({ type: "error", text: "Minimum and Maximum Bag Weight are required." });
+      if (minW > maxW) return setMessage({ type: "error", text: "Minimum Bag Weight cannot be greater than Maximum Bag Weight." });
+    }
     setSaving(true);
     setMessage(null);
     try {
-      await config.create(code.trim(), name.trim() || code.trim());
+      const profile = config.hasStorageProfile ? {
+        packing_density: Number(packingDensity),
+        min_bag_weight: Number(minBagWeight),
+        max_bag_weight: Number(maxBagWeight),
+      } : {};
+      await config.create(code.trim(), name.trim() || code.trim(), profile);
       setCode("");
       setName("");
+      setPackingDensity("");
+      setMinBagWeight("");
+      setMaxBagWeight("");
       await load();
       setMessage({ type: "success", text: `${config.title.replace(" Master", "")} added successfully.` });
     } catch (err) {
@@ -363,6 +401,23 @@ function SimpleMaster({ type }) {
             <span>{config.nameLabel}</span>
             <input className="master-input" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
+          {config.hasStorageProfile && (
+            <>
+              <label>
+                <span>Packing Density</span>
+                <input className="master-input" type="number" min="0.001" step="0.001" value={packingDensity} onChange={(e) => setPackingDensity(e.target.value)} placeholder="e.g. 350" />
+              </label>
+              <label>
+                <span>Minimum Bag Weight (kg)</span>
+                <input className="master-input" type="number" min="0.01" step="0.01" value={minBagWeight} onChange={(e) => setMinBagWeight(e.target.value)} placeholder="e.g. 45" />
+              </label>
+              <label>
+                <span>Maximum Bag Weight (kg)</span>
+                <input className="master-input" type="number" min="0.01" step="0.01" value={maxBagWeight} onChange={(e) => setMaxBagWeight(e.target.value)} placeholder="e.g. 55" />
+              </label>
+              <p className="master-help">Invoice Entry will accept this grade only when Net Weight Each is inside this configured range.</p>
+            </>
+          )}
           <button className="master-btn master-btn-primary" type="button" onClick={add} disabled={saving}>
             {saving ? "Saving…" : "Add New"}
           </button>
@@ -381,23 +436,119 @@ function SimpleMaster({ type }) {
         <div className="master-table-wrap">
           <table className="master-table">
             <thead>
-              <tr><th>Code</th><th>Name</th><th>Status</th></tr>
+              {config.hasStorageProfile ? (
+                <tr><th>Code</th><th>Name</th><th>Packing Density</th><th>Allowed Bag Weight</th><th>Profile</th></tr>
+              ) : (
+                <tr><th>Code</th><th>Name</th><th>Status</th></tr>
+              )}
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="3">Loading…</td></tr>
+                <tr><td colSpan={config.hasStorageProfile ? 5 : 3}>Loading…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan="3">No records found.</td></tr>
+                <tr><td colSpan={config.hasStorageProfile ? 5 : 3}>No records found.</td></tr>
               ) : rows.map((row, index) => (
                 <tr key={row[config.idKey] || `${row[config.codeKey]}-${index}`}>
                   <td>{row[config.codeKey]}</td>
                   <td>{row[config.nameKey]}</td>
-                  <td><span className="master-status active">{row.status || (row.active === 0 ? "INACTIVE" : "ACTIVE")}</span></td>
+                  {config.hasStorageProfile ? (
+                    <>
+                      <td>{row.packing_density ? Number(row.packing_density).toFixed(3) : "Not configured"}</td>
+                      <td>{row.min_bag_weight && row.max_bag_weight ? `${Number(row.min_bag_weight).toFixed(2)}–${Number(row.max_bag_weight).toFixed(2)} kg` : "Not configured"}</td>
+                      <td>
+                        <button className="master-btn master-btn-secondary" type="button" onClick={() => {
+                          setEditingGradeId(row.grade_id);
+                          setPackingDensity(row.packing_density ?? "");
+                          setMinBagWeight(row.min_bag_weight ?? "");
+                          setMaxBagWeight(row.max_bag_weight ?? "");
+                        }}>Configure</button>
+                      </td>
+                    </>
+                  ) : (
+                    <td><span className="master-status active">{row.status || (row.active === 0 ? "INACTIVE" : "ACTIVE")}</span></td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        {config.hasStorageProfile && editingGradeId && (
+          <div className="master-form-stack" style={{ marginTop: 18 }}>
+            <div className="master-card-head"><div><span className="master-kicker">GRADE STORAGE PROFILE</span><h3>Configure Existing Grade</h3></div></div>
+            <label><span>Packing Density</span><input className="master-input" type="number" min="0.001" step="0.001" value={packingDensity} onChange={(e) => setPackingDensity(e.target.value)} /></label>
+            <label><span>Minimum Bag Weight (kg)</span><input className="master-input" type="number" min="0.01" step="0.01" value={minBagWeight} onChange={(e) => setMinBagWeight(e.target.value)} /></label>
+            <label><span>Maximum Bag Weight (kg)</span><input className="master-input" type="number" min="0.01" step="0.01" value={maxBagWeight} onChange={(e) => setMaxBagWeight(e.target.value)} /></label>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="master-btn master-btn-primary" type="button" onClick={async () => {
+                const density = Number(packingDensity), minW = Number(minBagWeight), maxW = Number(maxBagWeight);
+                if (!(density > 0) || !(minW > 0) || !(maxW > 0) || minW > maxW) return setMessage({ type: "error", text: "Enter a valid packing density and weight range." });
+                setSaving(true); setMessage(null);
+                try {
+                  await config.updateProfile(editingGradeId, { packing_density: density, min_bag_weight: minW, max_bag_weight: maxW });
+                  await load(); setEditingGradeId(null); setPackingDensity(""); setMinBagWeight(""); setMaxBagWeight("");
+                  setMessage({ type: "success", text: "Grade storage profile updated successfully." });
+                } catch (err) { setMessage({ type: "error", text: err.response?.data?.message || "Could not update grade profile." }); }
+                finally { setSaving(false); }
+              }} disabled={saving}>Save Profile</button>
+              <button className="master-btn master-btn-secondary" type="button" onClick={() => { setEditingGradeId(null); setPackingDensity(""); setMinBagWeight(""); setMaxBagWeight(""); }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function AuctionCalendarMaster() {
+  const [rows, setRows] = useState([]);
+  const [form, setForm] = useState({ auction_date: "", sale_no: "", notes: "", status: "SCHEDULED" });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API}/master/auctions-list.php`, { withCredentials: true });
+      setRows(res.data.data || []);
+    } catch (err) {
+      setMessage({ type: "error", text: err.response?.data?.message || "Could not load auction calendar." });
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const create = async () => {
+    if (!form.auction_date) return setMessage({ type: "error", text: "Auction date is required." });
+    setSaving(true); setMessage(null);
+    try {
+      await axios.post(`${API}/master/auctions-create.php`, form, { withCredentials: true });
+      setForm({ auction_date: "", sale_no: "", notes: "", status: "SCHEDULED" });
+      await load();
+      setMessage({ type: "success", text: "Tea auction date saved. Home screens now use the next scheduled date." });
+    } catch (err) {
+      setMessage({ type: "error", text: err.response?.data?.message || "Could not save auction date." });
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="master-grid master-data-layout">
+      <section className="master-card">
+        <div className="master-card-head"><div><span className="master-kicker">AUCTION SCHEDULE</span><h3>Add Tea Auction</h3></div></div>
+        <div className="master-form-stack">
+          <label><span>Auction Date</span><input className="master-input" type="date" value={form.auction_date} onChange={set("auction_date")} /></label>
+          <label><span>Sale / Auction No</span><input className="master-input" value={form.sale_no} onChange={set("sale_no")} placeholder="e.g. SALE-35" /></label>
+          <label><span>Status</span><select className="master-input" value={form.status} onChange={set("status")}><option>SCHEDULED</option><option>COMPLETED</option><option>CANCELLED</option></select></label>
+          <label><span>Notes</span><input className="master-input" value={form.notes} onChange={set("notes")} placeholder="Optional" /></label>
+          <button className="master-btn master-btn-primary" type="button" onClick={create} disabled={saving}>{saving ? "Saving…" : "Save Auction Date"}</button>
+        </div>
+        {message && <div className={`master-message ${message.type}`}>{message.text}</div>}
+      </section>
+      <section className="master-card master-list-card">
+        <div className="master-card-head"><div><span className="master-kicker">AUCTION CALENDAR</span><h3>Scheduled Dates</h3></div><span className="master-count">{rows.length}</span></div>
+        <div className="master-table-wrap"><table className="master-table"><thead><tr><th>Date</th><th>Sale No</th><th>Status</th><th>Created By</th><th>Notes</th></tr></thead><tbody>
+          {loading ? <tr><td colSpan="5">Loading…</td></tr> : rows.length === 0 ? <tr><td colSpan="5">No auction dates found.</td></tr> : rows.map((r) => <tr key={r.auction_id}><td>{r.auction_date}</td><td>{r.sale_no || "—"}</td><td><span className={`master-status ${r.status === "SCHEDULED" ? "active" : "inactive"}`}>{r.status}</span></td><td>{r.created_by_name || "—"}</td><td>{r.notes || "—"}</td></tr>)}
+        </tbody></table></div>
       </section>
     </div>
   );
@@ -499,7 +650,9 @@ export default function Master({ section = "access-manager" }) {
     ? "Access Manager"
     : section === "user-account"
       ? "User Account Master"
-      : MASTER_CONFIG[section]?.title || "Brokering Master";
+      : section === "auction-calendar"
+        ? "Tea Auction Calendar"
+        : MASTER_CONFIG[section]?.title || "Brokering Master";
 
   return (
     <div className="master-page">
@@ -512,6 +665,7 @@ export default function Master({ section = "access-manager" }) {
       <main className="master-content">
         {section === "access-manager" && <AccessManager />}
         {section === "user-account" && <UserAccountMaster actorRole={session.role} />}
+        {section === "auction-calendar" && <AuctionCalendarMaster />}
         {MASTER_CONFIG[section] && <SimpleMaster type={section} />}
       </main>
     </div>

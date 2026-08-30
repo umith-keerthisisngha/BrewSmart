@@ -124,3 +124,25 @@
   font-size: 11px;
   color: #6b756b;
 }
+
+/* Premium dark theme alignment with Master > User Access */
+.ai-card {
+  border: 1px solid rgba(149,185,139,.14);
+  border-radius: 14px;
+  padding: 16px;
+  background: linear-gradient(180deg,rgba(18,25,19,.94),rgba(9,14,10,.96));
+  color: #eef4ee;
+}
+.ai-card-best {
+  border-color: rgba(122,191,67,.55);
+  background: linear-gradient(180deg,rgba(24,36,22,.96),rgba(10,16,11,.98));
+  box-shadow: 0 0 0 1px rgba(122,191,67,.22) inset;
+}
+.ai-badge { background: rgba(109,171,62,.18); color: #a7d780; border: 1px solid rgba(119,183,68,.26); }
+.ai-card-loc { color: #eef4ee; }
+.ai-card-rack,.ai-card-reason,.ai-card-meta,.ai-score-label { color: #8c9a8e; }
+.ai-card-score { color: #a7d780; }
+.ai-card-score span { color: #748177; }
+.ai-score-track { background: #202821; }
+.ai-score-fill { background: linear-gradient(90deg,#4b8b32,#78b943); }
+.ai-score-value { color: #cbd5cd; }

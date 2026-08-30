@@ -1,7 +1,7 @@
+import { API_BASE as API } from "../../config/api";
 import { useEffect, useState } from "react";
 import axios from "axios";
 
-const API = "http://localhost/BrewSmart/backend/api";
 
 /**
  * Inline "Location Allocate" picker. Lets the user browse/search warehouse
@@ -35,49 +35,25 @@ export default function LocationAllocatePanel({ selected, onSelect, onClose }) {
   });
 
   return (
-    <div
-      style={{
-        border: "1px solid #c7cdc7",
-        borderRadius: 6,
-        marginTop: 10,
-        background: "#fbfcfb",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "10px 14px",
-          background: "#f4f6f4",
-          borderBottom: "1px solid #dfe3df",
-        }}
-      >
-        <strong style={{ fontSize: 13 }}>Location Allocate — choose a storage location</strong>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{ border: "none", background: "none", cursor: "pointer", fontSize: 14, color: "#6a7370" }}
-        >
-          ✕
-        </button>
+    <div className="wp-location-picker">
+      <div className="wp-location-picker-head">
+        <strong>Location Allocate — choose a storage location</strong>
+        <button type="button" onClick={onClose} className="wp-location-picker-close">✕</button>
       </div>
 
-      <div style={{ padding: 12 }}>
+      <div className="wp-location-picker-body">
         <input
-          className="wp-input"
+          className="wp-input wp-location-picker-search"
           placeholder="Search by location or rack code..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ marginBottom: 10 }}
         />
 
         {loading && <p className="wp-hint">Loading locations…</p>}
-        {error && <p className="wp-hint" style={{ color: "#b91c1c", fontWeight: 600 }}>{error}</p>}
+        {error && <p className="wp-hint wp-text-error">{error}</p>}
 
         {!loading && !error && (
-          <div className="wp-table-wrap" style={{ maxHeight: 260, overflowY: "auto" }}>
+          <div className="wp-table-wrap wp-location-picker-table">
             <table className="wp-table">
               <thead>
                 <tr>
@@ -92,9 +68,7 @@ export default function LocationAllocatePanel({ selected, onSelect, onClose }) {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="wp-table-empty">
-                      No locations match your search.
-                    </td>
+                    <td colSpan={6} className="wp-table-empty">No locations match your search.</td>
                   </tr>
                 ) : (
                   filtered.map((l) => {
@@ -103,10 +77,7 @@ export default function LocationAllocatePanel({ selected, onSelect, onClose }) {
                     return (
                       <tr
                         key={l.location_id}
-                        style={{
-                          background: isSelected ? "#eaf5e2" : undefined,
-                          opacity: disabled && !isSelected ? 0.55 : 1,
-                        }}
+                        className={`${isSelected ? "wp-row-selected" : ""} ${disabled && !isSelected ? "wp-row-disabled" : ""}`}
                       >
                         <td>{l.location_code}</td>
                         <td>{l.rack_code}</td>
@@ -116,12 +87,9 @@ export default function LocationAllocatePanel({ selected, onSelect, onClose }) {
                         <td>
                           <button
                             type="button"
-                            className="wp-btn wp-btn-outline"
-                            style={{ padding: "4px 10px", fontSize: 11 }}
+                            className="wp-btn wp-btn-outline wp-btn-compact"
                             disabled={disabled}
-                            onClick={() =>
-                              onSelect({ location_id: l.location_id, location_code: l.location_code })
-                            }
+                            onClick={() => onSelect({ location_id: l.location_id, location_code: l.location_code })}
                           >
                             {isSelected ? "Selected" : "Select"}
                           </button>

@@ -1,3 +1,4 @@
+import { API_BASE as API } from "../../config/api";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -6,125 +7,57 @@ import "../../components/warehouse/WarehousePage.css";
 import "./Reports.css";
 import { downloadReportPdf } from "../../utils/reportPdf";
 
-const API = "http://localhost/BrewSmart/backend/api";
 
-// Reports actually backed by a live endpoint today.
+// Only reports backed by real database endpoints are shown. No dead menu items.
 const LIVE_REPORTS = {
-  "Daily Stock Summary": {
-    endpoint: "/reports/daily-stock-summary.php",
-    columns: [
-      { key: "report_date", label: "Date" },
-      { key: "arrival_bags", label: "Arrivals (Bags)" },
-      { key: "arrival_weight", label: "Arrivals Weight (kg)" },
-      { key: "delivery_bags", label: "Deliveries (Bags)" },
-      { key: "delivery_weight", label: "Deliveries Weight (kg)" },
-      { key: "stock_bags", label: "Stock (Bags)" },
-      { key: "stock_weight", label: "Stock Weight (kg)" },
-    ],
-  },
-  "Invoice / Arrival Register": {
-    endpoint: "/reports/invoices.php",
-    columns: [
-      { key: "invoice_date", label: "Date" },
-      { key: "invoice_no", label: "Invoice No" },
-      { key: "mark", label: "Mark" },
-      { key: "grade", label: "Grade" },
-      { key: "packing_type", label: "Packing" },
-      { key: "broker", label: "Broker" },
-      { key: "chests", label: "Chests" },
-      { key: "net_weight_each", label: "Net/Chest kg" },
-      { key: "total_net_weight", label: "Total Net kg" },
-      { key: "allocated_locations", label: "Location(s)" },
-      { key: "allocation_model", label: "Allocation" },
-      { key: "allocation_score", label: "Score %" },
-    ],
-  },
-  "Arrival Report (With Pallets)": {
-    endpoint: "/reports/invoices.php",
-    columns: [
-      { key: "invoice_date", label: "Date" },
-      { key: "invoice_no", label: "Invoice No" },
-      { key: "mark", label: "Mark" },
-      { key: "grade", label: "Grade" },
-      { key: "packing_type", label: "Packing" },
-      { key: "broker", label: "Broker" },
-      { key: "chests", label: "Chests" },
-      { key: "total_net_weight", label: "Total Net kg" },
-      { key: "allocated_locations", label: "Location(s)" },
-      { key: "allocation_score", label: "AI Score %" },
-    ],
-  },
-  "Daily Arrivals Summary For All Brokers": {
-    endpoint: "/reports/daily-arrivals.php",
-    columns: [
-      { key: "invoice_date", label: "Date" },
-      { key: "broker", label: "Broker" },
-      { key: "invoices", label: "Invoices" },
-      { key: "chests", label: "Chests" },
-      { key: "total_net_weight", label: "Total Net kg" },
-    ],
-  },
-  "Rack Wise Stock": {
-    endpoint: "/reports/warehouse.php",
-    columns: [
-      { key: "rack_code", label: "Rack" },
-      { key: "locations", label: "Locations" },
-      { key: "capacity_bags", label: "Capacity (bags)" },
-      { key: "occupied_bags", label: "Occupied (bags)" },
-      { key: "free_bags", label: "Free (bags)" },
-    ],
-  },
-  "Mark Wise Stock": {
-    endpoint: "/reports/inventory.php",
-    columns: [
-      { key: "tea_name", label: "Tea Type" },
-      { key: "grade_code", label: "Grade" },
-      { key: "lots", label: "Lots" },
-      { key: "total_bags", label: "Total Bags" },
-      { key: "available_bags", label: "Available Bags" },
-      { key: "allocated_bags", label: "Allocated Bags" },
-    ],
-  },
-  "Daily Unloaded Turns": {
-    endpoint: "/reports/movements.php",
-    columns: [
-      { key: "movement_date", label: "Date" },
-      { key: "movement_type", label: "Type" },
-      { key: "bags", label: "Bags" },
-      { key: "transactions", label: "Transactions" },
-    ],
-  },
+  "Daily Stock Summary": { endpoint: "/reports/daily-stock-summary.php", columns: [
+    { key: "report_date", label: "Date" }, { key: "arrival_bags", label: "Arrivals (Bags)" },
+    { key: "arrival_weight", label: "Arrivals Weight (kg)" }, { key: "delivery_bags", label: "Deliveries (Bags)" },
+    { key: "delivery_weight", label: "Deliveries Weight (kg)" }, { key: "stock_bags", label: "Closing Stock (Bags)" },
+    { key: "stock_weight", label: "Closing Stock Weight (kg)" },
+  ]},
+  "Invoice / Arrival Register": { endpoint: "/reports/invoices.php", columns: [
+    { key: "invoice_date", label: "Date" }, { key: "invoice_no", label: "Invoice No" }, { key: "mark", label: "Mark" },
+    { key: "grade", label: "Grade" }, { key: "packing_type", label: "Packing" }, { key: "broker", label: "Broker" },
+    { key: "chests", label: "Bags" }, { key: "net_weight_each", label: "Net/Bag kg" },
+    { key: "total_net_weight", label: "Total Net kg" }, { key: "allocated_locations", label: "Location(s)" },
+  ]},
+  "Daily Arrivals Summary": { endpoint: "/reports/daily-arrivals.php", columns: [
+    { key: "invoice_date", label: "Date" }, { key: "broker", label: "Broker" }, { key: "invoices", label: "Invoices" },
+    { key: "chests", label: "Bags" }, { key: "total_net_weight", label: "Total Net kg" },
+  ]},
+  "Rack Wise Stock": { endpoint: "/reports/warehouse.php", columns: [
+    { key: "rack_code", label: "Rack" }, { key: "locations", label: "Locations" }, { key: "capacity_bags", label: "Capacity (bags)" },
+    { key: "occupied_bags", label: "Stock (bags)" }, { key: "free_bags", label: "Free (bags)" },
+  ]},
+  "Grade Wise Live Stock": { endpoint: "/reports/grade-stock.php", columns: [
+    { key: "grade", label: "Grade" }, { key: "invoices", label: "Invoices" }, { key: "stock_bags", label: "Stock Bags" },
+    { key: "stock_weight", label: "Stock Weight (kg)" },
+  ]},
+  "Broker Wise Live Stock": { endpoint: "/reports/broker-stock.php", columns: [
+    { key: "broker", label: "Broker" }, { key: "invoices", label: "Invoices" }, { key: "stock_bags", label: "Stock Bags" },
+    { key: "stock_weight", label: "Stock Weight (kg)" },
+  ]},
+  "Daily Issued Summary": { endpoint: "/reports/issued-summary.php", columns: [
+    { key: "issued_date", label: "Date" }, { key: "gins", label: "GINs" }, { key: "issued_bags", label: "Issued Bags" },
+    { key: "issued_weight", label: "Issued Weight (kg)" },
+  ]},
+  "Turn Number Summary": { endpoint: "/reports/turn-summary.php", columns: [
+    { key: "turn_no", label: "Turn No" }, { key: "turn_date", label: "Date" }, { key: "broker", label: "Broker" },
+    { key: "invoices", label: "Invoices" }, { key: "arrival_bags", label: "Arrival Bags" }, { key: "arrival_weight", label: "Arrival Weight (kg)" },
+    { key: "issued_bags", label: "Issued Bags" },
+  ]},
+  "Location Utilization": { endpoint: "/reports/location-utilization.php", columns: [
+    { key: "rack_code", label: "Rack" }, { key: "level_code", label: "Level" }, { key: "locations", label: "Locations" },
+    { key: "capacity_bags", label: "Capacity" }, { key: "occupied_bags", label: "Occupied" }, { key: "utilization_pct", label: "Utilization %" },
+  ]},
+  "Daily Stock Movements": { endpoint: "/reports/movements.php", columns: [
+    { key: "movement_date", label: "Date" }, { key: "movement_type", label: "Type" }, { key: "bags", label: "Bags" },
+    { key: "transactions", label: "Transactions" },
+  ]},
 };
 
-const OTHER_REPORTS = [
-  "Bin List By Date Range",
-  "Buyer Wise Uncollected List",
-  "CBA Stock",
-  "Daily Arrivals Summary Broker Wise",
-  "Daily Arrivals Summary Owner Wise",
-  "Daily Delivery Summary",
-  "Daily Statatements Of Arrivals Other Broker",
-  "Daily Statatements Of Arrivals Own Broker",
-  "Deleted Lines Details",
-  "Empty Pallets",
-  "Extra Store Rent For Buyers",
-  "Extra Store Rent Summary For Buyers",
-  "Full RA Marks Details",
-  "Insurance Recovery",
-  "Issuing Details Broker Wise",
-  "Line With More Arrivals",
-  "Loose Chest Report",
-  "Missing Chests Report",
-  "Owner Wise Stock Summary",
-  "Pallet Wise Stock",
-  "Received vs Issued Summary",
-  "Store Rent Summary",
-  "Turn Number Wise Report",
-  "Unloading Summary",
-  "Weight Variance Report",
-];
-
-const REPORT_OPTIONS = [...Object.keys(LIVE_REPORTS), ...OTHER_REPORTS];
+const REPORT_OPTIONS = Object.keys(LIVE_REPORTS);
 
 export default function Reports() {
   const navigate = useNavigate();
@@ -227,7 +160,7 @@ export default function Reports() {
           Reports <span className="wp-crumb-current">/ Store Reports</span>
         </p>
 
-        <div className="wp-panel">
+        <div className="wp-panel rpt-panel">
           <div className="wp-panel-header">
             <span className="wp-icon">🖶</span>
             <span>Store Reports</span>

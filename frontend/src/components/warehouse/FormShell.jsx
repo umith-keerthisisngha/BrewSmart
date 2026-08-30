@@ -1,3 +1,4 @@
+import { API_BASE } from "../../config/api";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -6,19 +7,15 @@ import "./WarehousePage.css";
 
 export function Field({ label, children }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: "#444a44" }}>{label}</span>
+    <label className="wp-field">
+      <span>{label}</span>
       {children}
     </label>
   );
 }
 
 export function FieldGrid({ children }) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-      {children}
-    </div>
-  );
+  return <div className="wp-field-grid">{children}</div>;
 }
 
 export default function FormShell({ crumb, title, active = "bin-operation", children }) {
@@ -28,7 +25,7 @@ export default function FormShell({ crumb, title, active = "bin-operation", chil
 
   useEffect(() => {
     axios
-      .get("http://localhost/BrewSmart/backend/api/auth/session-check.php", {
+      .get(`${API_BASE}/auth/session-check.php`, {
         withCredentials: true,
       })
       .then((res) => {

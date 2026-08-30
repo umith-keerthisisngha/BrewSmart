@@ -1,9 +1,9 @@
+import { API_BASE as API } from "../../../config/api";
 import { useEffect, useState } from "react";
 import axios from "axios";
 import FormShell, { Field } from "../../../components/warehouse/FormShell";
 import LocationAllocatePanel from "../../../components/warehouse/LocationAllocatePanel";
 
-const API = "http://localhost/BrewSmart/backend/api";
 const CHEST_TYPES = ["A", "B", "C", "D", "BAG"];
 
 export default function InvoiceEntryEdit() {
@@ -108,6 +108,19 @@ export default function InvoiceEntryEdit() {
 
   const handleSave = async () => {
     setMessage(null);
+    const selectedGrade = grades.find((g) => String(g.grade_code) === String(form?.grade));
+    const density = Number(selectedGrade?.packing_density || 0);
+    const minW = Number(selectedGrade?.min_bag_weight || 0);
+    const maxW = Number(selectedGrade?.max_bag_weight || 0);
+    const weight = Number(form?.netWeightEach || 0);
+    if (!selectedGrade || !(density > 0) || !(minW > 0) || !(maxW > 0)) {
+      setMessage({ type: "error", text: `Grade ${form?.grade || ""} must be configured with Packing Density and Bag Weight range in Grade Master.` });
+      return;
+    }
+    if (weight < minW || weight > maxW) {
+      setMessage({ type: "error", text: `Grade ${form.grade} allows ${minW.toFixed(2)}–${maxW.toFixed(2)} kg per bag. Entered: ${weight.toFixed(2)} kg.` });
+      return;
+    }
     setSaving(true);
     try {
       const res = await axios.post(
@@ -217,9 +230,12 @@ export default function InvoiceEntryEdit() {
             <Field label="Grade">
               <select className="wp-input" value={form.grade} onChange={set("grade")}>
                 <option value="">-- Select from Grade Master --</option>
-                {grades.map((g) => (
-                  <option key={g.grade_id || g.grade_code} value={g.grade_code}>{g.grade_code} - {g.grade_name}</option>
-                ))}
+                {grades.map((g) => {
+                  const minW = Number(g.min_bag_weight || 0), maxW = Number(g.max_bag_weight || 0), density = Number(g.packing_density || 0), weight = Number(form.netWeightEach || 0);
+                  const configured = density > 0 && minW > 0 && maxW > 0;
+                  const outside = weight > 0 && configured && (weight < minW || weight > maxW);
+                  return <option key={g.grade_id || g.grade_code} value={g.grade_code} disabled={!configured || outside}>{g.grade_code} - {g.grade_name}{configured ? ` | ${minW.toFixed(2)}–${maxW.toFixed(2)} kg | Density ${density.toFixed(3)}` : " | Configure in Grade Master"}</option>;
+                })}
               </select>
             </Field>
 

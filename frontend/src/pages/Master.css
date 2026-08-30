@@ -192,3 +192,7 @@
   .master-topbar, .master-page-title, .master-content { padding-left: 18px; padding-right: 18px; }
   .master-page-title { align-items: start; flex-direction: column; }
 }
+
+.master-brand-logo { width: 124px; max-height: 46px; object-fit: contain; object-position: left center; display:block; }
+.master-brand { min-width: 124px; }
+@media (max-width: 700px) { .master-brand-logo { width: 110px; } }

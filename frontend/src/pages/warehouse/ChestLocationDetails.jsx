@@ -1,10 +1,10 @@
+import { API_BASE as API } from "../../config/api";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { WarehouseHeader, WarehouseFooter } from "../../components/warehouse/WarehouseHeader";
 import "../../components/warehouse/WarehousePage.css";
 
-const API = "http://localhost/BrewSmart/backend/api";
 
 const STATUS_CLASS = {
   EMPTY: "wp-cell-empty",

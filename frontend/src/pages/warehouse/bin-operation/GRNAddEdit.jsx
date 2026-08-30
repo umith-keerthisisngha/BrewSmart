@@ -1,9 +1,9 @@
+import { API_BASE as API } from "../../../config/api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import FormShell, { Field } from "../../../components/warehouse/FormShell";
 import "./ReceivingIssuing.css";
 
-const API = "http://localhost/BrewSmart/backend/api";
 const DEFAULT_STORE = "BrewSmart Warehouse";
 const today = () => new Date().toISOString().slice(0, 10);
 

@@ -1,23 +1,38 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../services/WarehouseRuleService.php';
+require_once __DIR__ . '/../services/AIClient.php';
+require_once __DIR__ . '/../services/ReportService.php';
+require_once __DIR__ . '/../repositories/TeaGradeRepository.php';
+require_once __DIR__ . '/../repositories/LocationRepository.php';
 
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowed = ['http://localhost:5173','http://127.0.0.1:5173','http://localhost','http://127.0.0.1'];
+$envOrigins = array_values(array_filter(array_map('trim', explode(',', getenv('BREWSMART_ALLOWED_ORIGINS') ?: ''))));
+$allowed = $envOrigins ?: ['http://localhost:5173','http://127.0.0.1:5173','http://localhost','http://127.0.0.1'];
 if ($origin && in_array($origin, $allowed, true)) {
     header("Access-Control-Allow-Origin: {$origin}");
-    header('Access-Control-Allow-Credentials: true');
-} else {
-    header('Access-Control-Allow-Origin: http://localhost:5173');
+    header('Vary: Origin');
     header('Access-Control-Allow-Credentials: true');
 }
 header('Access-Control-Allow-Headers: Content-Type, X-Requested-With');
 header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
 header('Content-Type: application/json; charset=utf-8');
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: no-referrer');
+header("Permissions-Policy: camera=(), microphone=(), geolocation=()");
+header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
+$method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+if (in_array($method, ['POST','PUT','PATCH','DELETE'], true) && $origin && !in_array($origin, $allowed, true)) {
+    http_response_code(403); echo json_encode(['success'=>false,'message'=>'Request origin is not allowed']); exit;
+}
+
 if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_set_cookie_params(['httponly'=>true,'samesite'=>'Lax']);
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+    session_set_cookie_params(['httponly'=>true,'secure'=>$isHttps,'samesite'=>'Lax']);
     session_start();
 }
 
@@ -106,4 +121,16 @@ function canManageTargetUser(array $actor, array $target): bool {
 function logActivity(string $action,string $module,string $description=''): void {
     try { $st=db()->prepare('INSERT INTO activity_logs(user_id,action,module,description) VALUES(?,?,?,?)'); $st->execute([$_SESSION['user_id'] ?? null,$action,$module,$description]); } catch(Throwable $e) {}
 }
+function loginThrottleCheck(): void {
+    $now=time();
+    $state=$_SESSION['_login_throttle'] ?? ['failures'=>[]];
+    $state['failures']=array_values(array_filter($state['failures'] ?? [], fn($t)=>$t > $now-900));
+    $_SESSION['_login_throttle']=$state;
+    if (count($state['failures']) >= 8) fail('Too many failed login attempts. Try again in 15 minutes.',429);
+}
+function loginThrottleFail(): void {
+    $state=$_SESSION['_login_throttle'] ?? ['failures'=>[]];
+    $state['failures'][]=time(); $_SESSION['_login_throttle']=$state;
+}
+function loginThrottleClear(): void { unset($_SESSION['_login_throttle']); }
 function intParam(string $key, int $default=0): int { return isset($_GET[$key]) && is_numeric($_GET[$key]) ? (int)$_GET[$key] : $default; }

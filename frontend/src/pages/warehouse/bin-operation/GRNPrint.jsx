@@ -1,3 +1,4 @@
+import { API_BASE as API } from "../../../config/api";
 import { useMemo, useState } from "react";
 import axios from "axios";
 import FormShell, { Field } from "../../../components/warehouse/FormShell";
@@ -5,7 +6,6 @@ import { downloadReportPdf } from "../../../utils/reportPdf";
 import { printTableDocument } from "../../../utils/printDocument";
 import "./ReceivingIssuing.css";
 
-const API = "http://localhost/BrewSmart/backend/api";
 const DEFAULT_STORE = "BrewSmart Warehouse";
 
 export default function GRNPrint() {

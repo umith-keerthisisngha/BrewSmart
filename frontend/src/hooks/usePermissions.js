@@ -1,7 +1,7 @@
+import { API_BASE as API } from "../config/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
-const API = "http://localhost/BrewSmart/backend/api";
 
 export default function usePermissions() {
   const [loading, setLoading] = useState(true);

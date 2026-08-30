@@ -1,10 +1,11 @@
+import { API_BASE as API } from "../../config/api";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import usePermissions from "../../hooks/usePermissions";
+import brewSmartLogo from "../../assets/brewsmart-logo.png";
 import "./WarehouseHeader.css";
 
-const API = "http://localhost/BrewSmart/backend/api";
 
 const BIN_OPERATION_MENU = [
   {
@@ -58,13 +59,7 @@ export function WarehouseHeader({ displayName, active }) {
     <>
       <header className="wh-navbar">
         <div className="wh-brand" onClick={() => can("warehousing.home") && navigate("/warehousing")}>
-          <div className="wh-leaf-logo">
-            <svg viewBox="0 0 64 64">
-              <path d="M49 8C29 10 15 20 15 36c0 9 6 16 15 16 16 0 25-16 19-44Z" />
-              <path d="M14 54C25 42 33 32 47 20" />
-            </svg>
-          </div>
-          <span className="wh-brand-text">Brew<span>Smart</span></span>
+          <img className="wh-logo-image" src={brewSmartLogo} alt="BrewSmart" />
         </div>
 
         <div className="wh-navbar-right">
@@ -134,9 +129,6 @@ export function WarehouseHeader({ displayName, active }) {
                 </div>
               )}
             </div>
-          )}
-          {can("warehousing.master") && (
-            <span className={active === "master" ? "active" : ""} onClick={() => navigate("/warehousing/master")}>MASTER</span>
           )}
           {can("warehousing.home") && (
             <span className={active === "home" ? "active" : ""} onClick={() => navigate("/warehousing")}>HOME</span>

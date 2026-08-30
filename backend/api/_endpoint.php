@@ -5,266 +5,17 @@ require_once __DIR__ . '/../lib/bootstrap.php';
 $action = defined('BREWSMART_ACTION') ? BREWSMART_ACTION : ($_GET['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'];
 
-function normalizeLevelList(?string $csv): array {
-    if ($csv === null || trim($csv) === '') return [];
-    $out = [];
-    foreach (preg_split('/\s*,\s*/', strtoupper(trim($csv))) as $level) {
-        if (preg_match('/^[A-F]$/', $level)) $out[$level] = true;
-    }
-    return array_keys($out);
-}
-
-function locationBagCapacity(array $location): int {
-    // BrewSmart physical rule: one storage location can hold a maximum of 10 tea bags/chests.
-    // Keep this backend guard even if an older database row still contains a larger capacity.
-    $dbCapacity = isset($location['capacity_bags']) ? (int)$location['capacity_bags'] : 10;
-    return max(0, min(10, $dbCapacity));
-}
-
-function invoiceAllocationProfile(array $d, ?PDO $pdo = null): array {
-    $pdo ??= db();
-    $bags = max(0, (int)($d['chests'] ?? $d['bags'] ?? 0));
-    $bagWeightRaw = $d['netWeightEach'] ?? $d['net_weight_each'] ?? $d['weightPerChest'] ?? $d['weight_per_chest'] ?? null;
-    $bagWeight = ($bagWeightRaw !== null && $bagWeightRaw !== '') ? (float)$bagWeightRaw : 0.0;
-    $gradeCode = trim((string)($d['grade'] ?? $d['grade_code'] ?? ''));
-    $packingCode = trim((string)($d['packingType'] ?? $d['packing_type'] ?? ''));
-    $mark = trim((string)($d['mark'] ?? ''));
-
-    $gradeId = null;
-    if ($gradeCode !== '') {
-        $st = $pdo->prepare('SELECT grade_id FROM tea_grades WHERE grade_code=? LIMIT 1');
-        $st->execute([$gradeCode]);
-        $v = $st->fetchColumn();
-        if ($v !== false) $gradeId = (int)$v;
-    }
-    $packingId = null;
-    if ($packingCode !== '') {
-        $st = $pdo->prepare('SELECT packing_type_id FROM packing_types WHERE packing_code=? LIMIT 1');
-        $st->execute([$packingCode]);
-        $v = $st->fetchColumn();
-        if ($v !== false) $packingId = (int)$v;
-    }
-
-    $allowed = ['A','B','C','D','E','F'];
-    $prohibited = [];
-    $rulesApplied = [];
-
-    try {
-        $sql = "SELECT rule_name,allowed_levels,prohibited_levels,priority,mandatory
-                FROM location_rules
-                WHERE active=1
-                  AND (min_bag_weight IS NULL OR ? >= min_bag_weight)
-                  AND (max_bag_weight IS NULL OR ? <= max_bag_weight)
-                  AND (grade_id IS NULL OR grade_id = ?)
-                  AND (packing_type_id IS NULL OR packing_type_id = ?)
-                ORDER BY priority ASC, rule_id ASC";
-        $st = $pdo->prepare($sql);
-        $st->execute([$bagWeight, $bagWeight, $gradeId, $packingId]);
-        foreach ($st->fetchAll() as $rule) {
-            if (!(int)$rule['mandatory']) continue;
-            $ruleAllowed = normalizeLevelList($rule['allowed_levels']);
-            $ruleProhibited = normalizeLevelList($rule['prohibited_levels']);
-            if ($ruleAllowed) $allowed = array_values(array_intersect($allowed, $ruleAllowed));
-            if ($ruleProhibited) $prohibited = array_values(array_unique(array_merge($prohibited, $ruleProhibited)));
-            $rulesApplied[] = $rule['rule_name'];
-        }
-    } catch (Throwable $e) {
-        // Existing installations that have not yet run the migration still get the critical safety fallback.
-    }
-
-    // Critical safety fallback. The migration creates this as a configurable DB rule;
-    // this guard prevents unsafe recommendations on an installation that has not migrated yet.
-    if ($bagWeight >= 50 && $bagWeight <= 65) {
-        $allowed = array_values(array_intersect($allowed, ['A','B','C']));
-        $prohibited = array_values(array_unique(array_merge($prohibited, ['D','E','F'])));
-        if (!$rulesApplied) $rulesApplied[] = 'Heavy tea bag lower-level safety rule';
-    }
-    $allowed = array_values(array_diff($allowed, $prohibited));
-
-    return [
-        'bags' => $bags,
-        'bag_weight' => $bagWeight,
-        'total_weight' => round($bags * $bagWeight, 2),
-        'grade_code' => $gradeCode,
-        'packing_code' => $packingCode,
-        'mark' => $mark,
-        'grade_id' => $gradeId,
-        'packing_type_id' => $packingId,
-        'allowed_levels' => $allowed,
-        'prohibited_levels' => $prohibited,
-        'rules_applied' => $rulesApplied,
-    ];
-}
-
-function recommendInvoiceLocations(array $d, int $limit = 12): array {
-    $pdo = db();
-    $p = invoiceAllocationProfile($d, $pdo);
-    if ($p['bags'] <= 0) return ['profile'=>$p,'candidates'=>[],'plan'=>[],'can_allocate'=>false,'remaining_bags'=>$p['bags']];
-    if ($p['bag_weight'] <= 0) return ['profile'=>$p,'candidates'=>[],'plan'=>[],'can_allocate'=>false,'remaining_bags'=>$p['bags']];
-    if (!$p['allowed_levels']) return ['profile'=>$p,'candidates'=>[],'plan'=>[],'can_allocate'=>false,'remaining_bags'=>$p['bags']];
-
-    $st = $pdo->query("SELECT wl.*,r.rack_code,r.rack_name,
-            (GREATEST(0,LEAST(wl.capacity_bags,10)-wl.occupied_bags)) free_bags,
-            (wl.max_weight_capacity-wl.current_weight) free_weight
-        FROM warehouse_locations wl
-        JOIN racks r ON r.rack_id=wl.rack_id
-        WHERE wl.status <> 'BLOCKED' AND wl.active=1 AND wl.blocked=0 AND wl.reserved=0
-          AND (LEAST(wl.capacity_bags,10)-wl.occupied_bags) > 0
-          AND (wl.max_weight_capacity-wl.current_weight) > 0
-        ORDER BY wl.location_id");
-    $raw = $st->fetchAll();
-
-    $rackStats = $pdo->query("SELECT rack_id,SUM(LEAST(capacity_bags,10)) cap,SUM(occupied_bags) occ FROM warehouse_locations WHERE active=1 AND blocked=0 GROUP BY rack_id")->fetchAll();
-    $rackUtil = [];
-    foreach ($rackStats as $r) $rackUtil[(int)$r['rack_id']] = (float)$r['cap'] > 0 ? (float)$r['occ']/(float)$r['cap'] : 0.0;
-
-    $same = [];
-    try {
-        $st = $pdo->prepare("SELECT ila.location_id,
-                    SUM(CASE WHEN wi.grade=? AND wi.mark=? THEN ila.chests_allocated ELSE 0 END) same_stock,
-                    SUM(ila.chests_allocated) all_stock
-                FROM invoice_location_allocations ila
-                JOIN warehouse_invoices wi ON wi.invoice_id=ila.invoice_id
-                GROUP BY ila.location_id");
-        $st->execute([$p['grade_code'], $p['mark']]);
-        foreach ($st->fetchAll() as $row) $same[(int)$row['location_id']] = $row;
-    } catch (Throwable $e) {}
-
-    $candidates = [];
-    foreach ($raw as $loc) {
-        $level = strtoupper((string)($loc['level_code'] ?? ''));
-        if (!in_array($level, $p['allowed_levels'], true)) continue;
-        if (in_array($level, $p['prohibited_levels'], true)) continue;
-
-        $freeBags = max(0, (int)$loc['free_bags']);
-        $freeWeight = max(0.0, (float)$loc['free_weight']);
-        $weightBagCapacity = (int)floor($freeWeight / max($p['bag_weight'], 0.01));
-        $usableBags = min($freeBags, $weightBagCapacity);
-        if ($usableBags <= 0) continue;
-
-        $targetHere = min($p['bags'], $usableBags);
-        $fitScore = $targetHere / max($usableBags, 1);
-        $weightFitScore = ($targetHere * $p['bag_weight']) / max($freeWeight, 0.01);
-        $util = $rackUtil[(int)$loc['rack_id']] ?? 0.0;
-        $balanceScore = max(0.0, 1.0 - $util);
-        $levelIndex = array_search($level, ['A','B','C','D','E','F'], true);
-        $accessScore = $levelIndex === false ? 0.5 : max(0.45, 1.0 - ($levelIndex * 0.1));
-
-        $sameInfo = $same[(int)$loc['location_id']] ?? null;
-        if ($sameInfo && (int)$sameInfo['same_stock'] > 0) {
-            $consolidationScore = 1.0;
-            $consolidationNote = 'same grade/mark stock is already stored here';
-        } elseif ((int)$loc['occupied_bags'] === 0) {
-            $consolidationScore = 0.72;
-            $consolidationNote = 'clean empty location';
-        } else {
-            $consolidationScore = 0.45;
-            $consolidationNote = 'partially occupied location';
-        }
-
-        $total = (0.30*$fitScore) + (0.20*$weightFitScore) + (0.25*$consolidationScore) + (0.15*$balanceScore) + (0.10*$accessScore);
-        $score = round(max(0,min(1,$total))*100,1);
-        $reasons = [
-            "Level {$level} passes all mandatory rules",
-            "{$usableBags} bags usable capacity",
-            $consolidationNote,
-            'rack utilization '.round($util*100,1).'%',
-        ];
-
-        $candidates[] = [
-            'location_id'=>(int)$loc['location_id'],
-            'location_code'=>$loc['location_code'],
-            'rack_code'=>$loc['rack_code'],
-            'level_code'=>$level,
-            'status'=>$loc['status'],
-            'free_bags'=>$freeBags,
-            'free_weight'=>round($freeWeight,2),
-            'usable_bags'=>$usableBags,
-            'score'=>$score,
-            'reason'=>implode('; ', $reasons).'.',
-        ];
-    }
-
-    usort($candidates, function($a,$b){
-        $cmp = $b['score'] <=> $a['score'];
-        if ($cmp !== 0) return $cmp;
-        return strcmp($a['location_code'],$b['location_code']);
-    });
-
-    $remaining = $p['bags'];
-    $plan = [];
-    foreach ($candidates as $cand) {
-        if ($remaining <= 0) break;
-        $qty = min($remaining, (int)$cand['usable_bags']);
-        if ($qty <= 0) continue;
-        $plan[] = [
-            'location_id'=>$cand['location_id'],
-            'location_code'=>$cand['location_code'],
-            'rack_code'=>$cand['rack_code'],
-            'level_code'=>$cand['level_code'],
-            'chests_allocated'=>$qty,
-            'weight_allocated'=>round($qty*$p['bag_weight'],2),
-            'score'=>$cand['score'],
-            'reason'=>$cand['reason'],
-        ];
-        $remaining -= $qty;
-    }
-
-    return [
-        'profile'=>$p,
-        'model_version'=>'INVOICE-WEIGHTED-2026.2',
-        'rule_version'=>'RULE-2026.2',
-        'candidates'=>array_slice($candidates,0,max(1,$limit)),
-        'plan'=>$plan,
-        'can_allocate'=>$remaining===0,
-        'remaining_bags'=>$remaining,
-    ];
-}
-
-function reserveInvoiceAllocation(PDO $pdo, int $invoiceId, array $plan, array $profile, int $userId, string $allocationType='AI'): void {
-    foreach ($plan as $part) {
-        $st = $pdo->prepare('SELECT * FROM warehouse_locations WHERE location_id=? FOR UPDATE');
-        $st->execute([(int)$part['location_id']]);
-        $loc = $st->fetch();
-        if (!$loc) throw new RuntimeException('Recommended location not found');
-        $level = strtoupper((string)($loc['level_code'] ?? ''));
-        if ($loc['status']==='BLOCKED' || !empty($loc['blocked']) || !empty($loc['reserved']) || isset($loc['active']) && (int)$loc['active']!==1) throw new RuntimeException('Location '.$loc['location_code'].' is unavailable');
-        if (!in_array($level,$profile['allowed_levels'],true) || in_array($level,$profile['prohibited_levels'],true)) throw new RuntimeException('Location '.$loc['location_code'].' violates a mandatory location rule');
-        $qty = (int)$part['chests_allocated'];
-        $weight = round($qty*(float)$profile['bag_weight'],2);
-        $effectiveCapacity = locationBagCapacity($loc);
-        if (($effectiveCapacity-(int)$loc['occupied_bags']) < $qty) throw new RuntimeException('Location '.$loc['location_code'].' can hold a maximum of 10 bags and does not have enough remaining capacity');
-        if (((float)$loc['max_weight_capacity']-(float)$loc['current_weight']) < $weight) throw new RuntimeException('Location '.$loc['location_code'].' does not have enough weight capacity');
-
-        $pdo->prepare('INSERT INTO invoice_location_allocations(invoice_id,location_id,chests_allocated,weight_allocated,allocation_type,score,allocated_by) VALUES(?,?,?,?,?,?,?)')
-            ->execute([$invoiceId,(int)$loc['location_id'],$qty,$weight,$allocationType,$part['score']??null,$userId]);
-        $newOcc=(int)$loc['occupied_bags']+$qty;
-        $newWeight=(float)$loc['current_weight']+$weight;
-        $newStatus=$newOcc >= $effectiveCapacity ? 'FULL' : 'PARTIAL';
-        $pdo->prepare('UPDATE warehouse_locations SET occupied_bags=?,current_weight=?,status=? WHERE location_id=?')
-            ->execute([$newOcc,$newWeight,$newStatus,(int)$loc['location_id']]);
-    }
-}
-
-function releaseInvoiceAllocations(PDO $pdo, int $invoiceId): void {
-    $st=$pdo->prepare('SELECT ila.*,wl.occupied_bags,wl.current_weight,wl.capacity_bags,wl.status FROM invoice_location_allocations ila JOIN warehouse_locations wl ON wl.location_id=ila.location_id WHERE ila.invoice_id=? FOR UPDATE');
-    $st->execute([$invoiceId]);
-    foreach($st->fetchAll() as $a){
-        $newOcc=max(0,(int)$a['occupied_bags']-(int)$a['chests_allocated']);
-        $newWeight=max(0.0,(float)$a['current_weight']-(float)$a['weight_allocated']);
-        $effectiveCapacity=locationBagCapacity($a);
-        $newStatus=$a['status']==='BLOCKED'?'BLOCKED':($newOcc===0?'EMPTY':($newOcc>=$effectiveCapacity?'FULL':'PARTIAL'));
-        $pdo->prepare('UPDATE warehouse_locations SET occupied_bags=?,current_weight=?,status=? WHERE location_id=?')->execute([$newOcc,$newWeight,$newStatus,(int)$a['location_id']]);
-    }
-    $pdo->prepare('DELETE FROM invoice_location_allocations WHERE invoice_id=?')->execute([$invoiceId]);
-}
+require_once __DIR__ . '/../services/InvoiceAllocationService.php';
 
 switch ($action) {
 case 'login':
+    loginThrottleCheck();
     $d=body(); $username=trim((string)($d['username']??'')); $password=(string)($d['password']??'');
     if($username===''||$password==='') fail('Username and password are required');
+    if(strlen($username)>80 || strlen($password)>255) fail('Invalid login input',422);
     $st=db()->prepare('SELECT user_id,username,full_name,email,password_hash,role,status FROM users WHERE username=? LIMIT 1'); $st->execute([$username]); $u=$st->fetch();
-    if(!$u || $u['status']!=='ACTIVE' || !password_verify($password,$u['password_hash'])) fail('Invalid username or password',401);
+    if(!$u || $u['status']!=='ACTIVE' || !password_verify($password,$u['password_hash'])) { loginThrottleFail(); fail('Invalid username or password',401); }
+    loginThrottleClear();
     session_regenerate_id(true); $_SESSION['user_id']=(int)$u['user_id']; $_SESSION['user']=$u['username']; $_SESSION['display_name']=$u['full_name']; $_SESSION['role']=$u['role'];
     unset($u['password_hash']); logActivity('LOGIN','AUTH','User logged in');
     ok(['user'=>$u['username'],'display_name'=>$u['full_name'],'role'=>$u['role'],'email'=>$u['email']],'Login successful');
@@ -430,6 +181,11 @@ case 'movement_create':
 case 'dispatch_list': requireLogin(); ok(db()->query("SELECT d.*,u.username FROM dispatches d LEFT JOIN users u ON u.user_id=d.created_by ORDER BY d.dispatch_id DESC LIMIT 200")->fetchAll());
 case 'dispatch_create':
     $u=requireRole(['ADMIN','MANAGER','WAREHOUSE_STAFF']);$d=body();$invoice=trim((string)($d['invoice_no']??''));$bags=(int)($d['bags']??0);if($invoice===''||$bags<=0)fail('invoice_no and bags are required');$pdo=db();$pdo->beginTransaction();try{$st=$pdo->prepare("SELECT * FROM tea_inventory WHERE lot_number=? OR lot_number LIKE ? LIMIT 1 FOR UPDATE");$st->execute([$invoice,$invoice.'%']);$i=$st->fetch();if(!$i)fail('Inventory/invoice not found',404);if($i['available_bags']<$bags)fail('Insufficient available bags');$pdo->prepare('INSERT INTO dispatches(invoice_no,buyer,delivery_order_no,bags,vehicle_no,dispatch_date,status,created_by) VALUES(?,?,?,?,?,?,?,?)')->execute([$invoice,$d['buyer']??null,$d['delivery_order_no']??null,$bags,$d['vehicle_no']??null,$d['dispatch_date']??date('Y-m-d'),'DISPATCHED',$u['user_id']]);$pdo->prepare('UPDATE tea_inventory SET available_bags=available_bags-?,status=IF(available_bags-?=0,\'SOLD\',status) WHERE inventory_id=?')->execute([$bags,$bags,$i['inventory_id']]);$pdo->prepare('INSERT INTO stock_movements(inventory_id,movement_type,quantity_bags,reference_no,notes,created_by) VALUES(?,?,?,?,?,?)')->execute([$i['inventory_id'],'OUT',$bags,$invoice,'Dispatch',$u['user_id']]);$pdo->commit();logActivity('DISPATCH','WAREHOUSE',"Dispatched {$bags} bags for {$invoice}");ok([],'Dispatch created');}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();fail($e->getMessage(),400);}
+case 'reports_grade_stock': requirePermission('warehousing.reports'); ok((new ReportService(db()))->gradeStock());
+case 'reports_broker_stock': requirePermission('warehousing.reports'); ok((new ReportService(db()))->brokerStock());
+case 'reports_issued_summary': requirePermission('warehousing.reports'); ok((new ReportService(db()))->issuedSummary());
+case 'reports_turn_summary': requirePermission('warehousing.reports'); ok((new ReportService(db()))->turnSummary());
+case 'reports_location_utilization': requirePermission('warehousing.reports'); ok((new ReportService(db()))->locationUtilization());
 case 'reports_inventory': requirePermission('warehousing.reports');$rows=db()->query("SELECT t.tea_name,g.grade_code,SUM(i.total_bags) total_bags,SUM(i.available_bags) available_bags,SUM(i.allocated_bags) allocated_bags,COUNT(*) lots FROM tea_inventory i JOIN tea_types t ON t.tea_type_id=i.tea_type_id LEFT JOIN tea_grades g ON g.grade_id=i.grade_id GROUP BY t.tea_type_id,g.grade_id ORDER BY t.tea_name,g.grade_code")->fetchAll();ok($rows);
 case 'reports_warehouse': requirePermission('warehousing.reports');$rows=db()->query("SELECT r.rack_code,COUNT(wl.location_id) locations,SUM(LEAST(wl.capacity_bags,10)) capacity_bags,SUM(wl.occupied_bags) occupied_bags,SUM(GREATEST(0,LEAST(wl.capacity_bags,10)-wl.occupied_bags)) free_bags FROM racks r LEFT JOIN warehouse_locations wl ON wl.rack_id=r.rack_id GROUP BY r.rack_id ORDER BY r.rack_code")->fetchAll();ok($rows);
 case 'reports_movements': requirePermission('warehousing.reports');$rows=db()->query("SELECT DATE(created_at) movement_date,movement_type,SUM(quantity_bags) bags,COUNT(*) transactions FROM stock_movements GROUP BY DATE(created_at),movement_type ORDER BY movement_date DESC LIMIT 90")->fetchAll();ok($rows);
@@ -555,7 +311,66 @@ case 'users_update':
     $actor=requirePermission('master.user_account');$d=body();$id=(int)($d['user_id']??0);if(!$id)fail('user_id is required');$st=db()->prepare('SELECT user_id,username,full_name,email,role,status FROM users WHERE user_id=?');$st->execute([$id]);$target=$st->fetch();if(!$target)fail('User not found',404);if($actor['role']==='MANAGER'&&!canManageTargetUser($actor,$target))fail('Managers can only update Warehouse Staff or Broker users',403);
     $role=strtoupper(trim((string)($d['role']??$target['role'])));if($actor['role']==='MANAGER'&&in_array($role,['ADMIN','MANAGER'],true))fail('Managers cannot assign Admin or Manager roles',403);$status=strtoupper(trim((string)($d['status']??$target['status'])));if(!in_array($status,['ACTIVE','INACTIVE'],true))fail('Invalid status');
     $fields=['full_name'=>$d['full_name']??$target['full_name'],'email'=>($d['email']??$target['email'])?:null,'role'=>$role,'status'=>$status];$params=[$fields['full_name'],$fields['email'],$fields['role'],$fields['status']];$sql='UPDATE users SET full_name=?,email=?,role=?,status=?';if(!empty($d['password'])){$sql.=',password_hash=?';$params[]=password_hash((string)$d['password'],PASSWORD_DEFAULT);}$sql.=' WHERE user_id=?';$params[]=$id;db()->prepare($sql)->execute($params);logActivity('UPDATE','USER',"Updated user #{$id}");ok([],'User updated');
-case 'meta': requireLogin(); ok(['tea_types'=>db()->query('SELECT * FROM tea_types ORDER BY tea_name')->fetchAll(),'grades'=>db()->query('SELECT * FROM tea_grades ORDER BY grade_code')->fetchAll(),'suppliers'=>db()->query('SELECT * FROM suppliers WHERE status=\'ACTIVE\' ORDER BY supplier_name')->fetchAll(),'brokers'=>db()->query('SELECT * FROM brokers WHERE status=\'ACTIVE\' ORDER BY broker_name')->fetchAll(),'marks'=>db()->query('SELECT * FROM marks WHERE status=\'ACTIVE\' ORDER BY mark_name')->fetchAll(),'packing_types'=>db()->query('SELECT * FROM packing_types WHERE status=\'ACTIVE\' ORDER BY packing_name')->fetchAll()]);
+case 'meta': requireLogin(); ok(['tea_types'=>db()->query('SELECT * FROM tea_types ORDER BY tea_name')->fetchAll(),'grades'=>db()->query('SELECT * FROM tea_grades ORDER BY grade_code')->fetchAll(),'suppliers'=>db()->query('SELECT * FROM suppliers WHERE status=\'ACTIVE\' ORDER BY supplier_name')->fetchAll(),'brokers'=>db()->query('SELECT * FROM brokers WHERE status=\'ACTIVE\' ORDER BY broker_name')->fetchAll(),'buyers'=>db()->query('SELECT * FROM buyers WHERE status=\'ACTIVE\' ORDER BY buyer_name')->fetchAll(),'marks'=>db()->query('SELECT * FROM marks WHERE status=\'ACTIVE\' ORDER BY mark_name')->fetchAll(),'packing_types'=>db()->query('SELECT * FROM packing_types WHERE status=\'ACTIVE\' ORDER BY packing_name')->fetchAll()]);
+
+case 'buyers_list':
+    requireLogin();
+    ok(db()->query("SELECT * FROM buyers WHERE status='ACTIVE' ORDER BY buyer_name")->fetchAll());
+case 'buyers_create':
+    $u=requirePermission('master.buyer');$d=body();$code=trim((string)($d['buyer_code']??$d['code']??''));$name=trim((string)($d['buyer_name']??$d['name']??''));
+    if($code==='')fail('Buyer code is required');if($name==='')$name=$code;
+    $st=db()->prepare('INSERT INTO buyers(buyer_code,buyer_name) VALUES(?,?)');
+    try{$st->execute([$code,$name]);}catch(Throwable $e){fail($e->getCode()==='23000'?'That buyer already exists':$e->getMessage(),400);}
+    logActivity('CREATE','MASTER',"Added buyer {$code}");ok(['buyer_id'=>(int)db()->lastInsertId()],'Buyer added');
+case 'auctions_list':
+    requirePermission('master.auction_calendar');
+    $rows=db()->query("SELECT a.*,COALESCE(NULLIF(u.full_name,''),u.username) created_by_name FROM tea_auctions a LEFT JOIN users u ON u.user_id=a.created_by ORDER BY a.auction_date DESC,a.auction_id DESC LIMIT 200")->fetchAll();
+    ok($rows);
+case 'auctions_create':
+    $u=requirePermission('master.auction_calendar');$d=body();
+    $date=trim((string)($d['auction_date']??''));$saleNo=trim((string)($d['sale_no']??''));$notes=trim((string)($d['notes']??''));$status=strtoupper(trim((string)($d['status']??'SCHEDULED')));
+    if($date===''||!preg_match('/^\d{4}-\d{2}-\d{2}$/',$date))fail('Valid auction date is required');
+    if(!in_array($status,['SCHEDULED','COMPLETED','CANCELLED'],true))fail('Invalid auction status');
+    $st=db()->prepare('INSERT INTO tea_auctions(auction_date,sale_no,notes,status,created_by) VALUES(?,?,?,?,?)');
+    $st->execute([$date,$saleNo?:null,$notes?:null,$status,$u['user_id']]);
+    logActivity('CREATE','AUCTION','Added tea auction '.$date.($saleNo?' | '.$saleNo:''));
+    ok(['auction_id'=>(int)db()->lastInsertId()],'Tea auction date saved');
+case 'auction_next':
+    requireLogin();
+    $st=db()->query("SELECT auction_id,auction_date,sale_no,notes,status,DATEDIFF(auction_date,CURDATE()) days_remaining FROM tea_auctions WHERE status='SCHEDULED' AND auction_date>=CURDATE() ORDER BY auction_date,auction_id LIMIT 1");
+    ok($st->fetch() ?: null);
+case 'brokering_dashboard':
+    requirePermission('brokering.home');
+    $pdo=db();
+    $next=null;$stats=['active_brokers'=>0,'active_buyers'=>0,'active_marks'=>0,'upcoming_auctions'=>0];$recentBrokers=[];$recentBuyers=[];$upcomingAuctions=[];
+    try{$next=$pdo->query("SELECT auction_id,auction_date,sale_no,notes,status,DATEDIFF(auction_date,CURDATE()) days_remaining FROM tea_auctions WHERE status='SCHEDULED' AND auction_date>=CURDATE() ORDER BY auction_date,auction_id LIMIT 1")->fetch() ?: null;}catch(Throwable $e){}
+    try{$stats['active_brokers']=(int)$pdo->query("SELECT COUNT(*) FROM brokers WHERE status='ACTIVE'")->fetchColumn();$recentBrokers=$pdo->query("SELECT broker_id,broker_code,broker_name FROM brokers WHERE status='ACTIVE' ORDER BY broker_id DESC LIMIT 5")->fetchAll();}catch(Throwable $e){}
+    try{$stats['active_buyers']=(int)$pdo->query("SELECT COUNT(*) FROM buyers WHERE status='ACTIVE'")->fetchColumn();$recentBuyers=$pdo->query("SELECT buyer_id,buyer_code,buyer_name FROM buyers WHERE status='ACTIVE' ORDER BY buyer_id DESC LIMIT 5")->fetchAll();}catch(Throwable $e){}
+    try{$stats['active_marks']=(int)$pdo->query("SELECT COUNT(*) FROM marks WHERE status='ACTIVE'")->fetchColumn();}catch(Throwable $e){}
+    try{$stats['upcoming_auctions']=(int)$pdo->query("SELECT COUNT(*) FROM tea_auctions WHERE status='SCHEDULED' AND auction_date>=CURDATE()")->fetchColumn();$upcomingAuctions=$pdo->query("SELECT auction_id,auction_date,sale_no,status FROM tea_auctions WHERE status='SCHEDULED' AND auction_date>=CURDATE() ORDER BY auction_date,auction_id LIMIT 5")->fetchAll();}catch(Throwable $e){}
+    ok(['stats'=>$stats,'next_auction'=>$next,'recent_brokers'=>$recentBrokers,'recent_buyers'=>$recentBuyers,'upcoming_auctions'=>$upcomingAuctions]);
+case 'warehouse_dashboard':
+    requirePermission('warehousing.dashboard');
+    $summary=db()->query("SELECT
+        COALESCE(SUM(CASE WHEN active=1 AND blocked=0 THEN LEAST(capacity_bags,10) ELSE 0 END),0) capacity_bags,
+        COALESCE(SUM(CASE WHEN active=1 AND blocked=0 THEN occupied_bags ELSE 0 END),0) stock_bags,
+        COALESCE(SUM(CASE WHEN active=1 AND blocked=0 THEN current_weight ELSE 0 END),0) stock_weight,
+        SUM(CASE WHEN active=1 AND blocked=0 AND occupied_bags=0 THEN 1 ELSE 0 END) available_locations,
+        SUM(CASE WHEN active=1 AND blocked=0 AND occupied_bags>0 AND occupied_bags<LEAST(capacity_bags,10) THEN 1 ELSE 0 END) partial_locations,
+        SUM(CASE WHEN active=1 AND blocked=0 AND occupied_bags>=LEAST(capacity_bags,10) THEN 1 ELSE 0 END) full_locations,
+        SUM(CASE WHEN blocked=1 OR status='BLOCKED' THEN 1 ELSE 0 END) blocked_locations
+        FROM warehouse_locations")->fetch();
+    $arrivals=db()->query("SELECT COALESCE(SUM(chests),0) bags,COALESCE(SUM(COALESCE(total_net_weight,chests*COALESCE(net_weight_each,0))),0) weight,COUNT(*) invoices FROM warehouse_invoices WHERE invoice_date=CURDATE()")->fetch();
+    $deliveries=db()->query("SELECT COALESCE(SUM(quantity_bags),0) bags,COALESCE(SUM(weight),0) weight,COUNT(*) movements FROM invoice_stock_movements WHERE movement_type='OUT' AND DATE(created_at)=CURDATE()")->fetch();
+    $activeInvoices=(int)db()->query("SELECT COUNT(DISTINCT invoice_id) FROM invoice_location_allocations WHERE chests_allocated>0")->fetchColumn();
+    $pendingGins=db()->query("SELECT COUNT(*) notes,COALESCE(SUM(chests),0) bags FROM gins WHERE dispatch_status='PENDING'")->fetch();
+    $racks=db()->query("SELECT r.rack_code,r.rack_name,COALESCE(SUM(LEAST(wl.capacity_bags,10)),0) capacity_bags,COALESCE(SUM(wl.occupied_bags),0) occupied_bags,ROUND(CASE WHEN SUM(LEAST(wl.capacity_bags,10))>0 THEN 100*SUM(wl.occupied_bags)/SUM(LEAST(wl.capacity_bags,10)) ELSE 0 END,1) utilization_pct FROM racks r LEFT JOIN warehouse_locations wl ON wl.rack_id=r.rack_id AND wl.active=1 AND wl.blocked=0 GROUP BY r.rack_id ORDER BY utilization_pct DESC,r.rack_code LIMIT 20")->fetchAll();
+    $recent=db()->query("SELECT m.created_at,m.movement_type,m.quantity_bags,m.weight,m.reference_no,wi.invoice_no,wl.location_code FROM invoice_stock_movements m JOIN warehouse_invoices wi ON wi.invoice_id=m.invoice_id LEFT JOIN warehouse_locations wl ON wl.location_id=m.location_id ORDER BY m.movement_id DESC LIMIT 8")->fetchAll();
+    $cap=(float)($summary['capacity_bags']??0);$stock=(float)($summary['stock_bags']??0);
+    $summary['utilization_pct']=$cap>0?round(($stock/$cap)*100,1):0.0;
+    $summary['stock_bags']=(int)$stock;$summary['capacity_bags']=(int)$cap;$summary['stock_weight']=round((float)($summary['stock_weight']??0),2);
+    ok(['summary'=>$summary,'today_arrivals'=>['bags'=>(int)$arrivals['bags'],'weight'=>round((float)$arrivals['weight'],2),'invoices'=>(int)$arrivals['invoices']], 'today_deliveries'=>['bags'=>(int)$deliveries['bags'],'weight'=>round((float)$deliveries['weight'],2),'movements'=>(int)$deliveries['movements']], 'active_invoices'=>$activeInvoices,'pending_dispatch'=>['gins'=>(int)$pendingGins['notes'],'bags'=>(int)$pendingGins['bags']], 'racks'=>$racks,'recent_movements'=>$recent]);
+
 case 'brokers_list': requireLogin(); ok(db()->query("SELECT * FROM brokers WHERE status='ACTIVE' ORDER BY broker_name")->fetchAll());
 case 'brokers_create':
     $u=requirePermission('master.broker');$d=body();$code=trim((string)($d['broker_code']??$d['code']??''));$name=trim((string)($d['broker_name']??$d['name']??''));if($code==='')fail('Broker code is required');if($name==='')$name=$code;$st=db()->prepare('INSERT INTO brokers(broker_code,broker_name) VALUES(?,?)');try{$st->execute([$code,$name]);}catch(Throwable $e){fail($e->getCode()==='23000'?'That broker already exists':$e->getMessage(),400);}logActivity('CREATE','MASTER',"Added broker {$code}");ok(['broker_id'=>(int)db()->lastInsertId()],'Broker added');
@@ -566,7 +381,36 @@ case 'packing_list': requireLogin(); ok(db()->query("SELECT * FROM packing_types
 case 'packing_create':
     $u=requirePermission('master.packing_type');$d=body();$code=trim((string)($d['packing_code']??$d['code']??''));$name=trim((string)($d['packing_name']??$d['name']??''));if($code==='')fail('Packing type code is required');if($name==='')$name=$code;$st=db()->prepare('INSERT INTO packing_types(packing_code,packing_name) VALUES(?,?)');try{$st->execute([$code,$name]);}catch(Throwable $e){fail($e->getCode()==='23000'?'That packing type already exists':$e->getMessage(),400);}logActivity('CREATE','MASTER',"Added packing type {$code}");ok(['packing_type_id'=>(int)db()->lastInsertId()],'Packing type added');
 case 'grade_create':
-    $u=requirePermission('master.grade');$d=body();$code=trim((string)($d['grade_code']??$d['code']??''));$name=trim((string)($d['grade_name']??$d['name']??''));if($code==='')fail('Grade code is required');if($name==='')$name=$code;$st=db()->prepare('INSERT INTO tea_grades(grade_code,grade_name) VALUES(?,?)');try{$st->execute([$code,$name]);}catch(Throwable $e){fail($e->getCode()==='23000'?'That grade already exists':$e->getMessage(),400);}logActivity('CREATE','MASTER',"Added grade {$code}");ok(['grade_id'=>(int)db()->lastInsertId()],'Grade added');
+    $u=requirePermission('master.grade');$d=body();
+    $code=strtoupper(trim((string)($d['grade_code']??$d['code']??'')));
+    $name=trim((string)($d['grade_name']??$d['name']??''));
+    $density=(float)($d['packing_density']??0);
+    $minWeight=(float)($d['min_bag_weight']??0);
+    $maxWeight=(float)($d['max_bag_weight']??0);
+    if($code==='') fail('Grade code is required');
+    if($name==='') $name=$code;
+    if($density<=0) fail('Packing Density must be greater than 0');
+    if($minWeight<=0||$maxWeight<=0) fail('Minimum and Maximum Bag Weight are required');
+    if($minWeight>$maxWeight) fail('Minimum Bag Weight cannot be greater than Maximum Bag Weight');
+    $st=db()->prepare('INSERT INTO tea_grades(grade_code,grade_name,packing_density,min_bag_weight,max_bag_weight) VALUES(?,?,?,?,?)');
+    try{$st->execute([$code,$name,$density,$minWeight,$maxWeight]);}catch(Throwable $e){fail($e->getCode()==='23000'?'That grade already exists':$e->getMessage(),400);}
+    logActivity('CREATE','MASTER',"Added grade {$code} | density {$density} | {$minWeight}-{$maxWeight}kg");
+    ok(['grade_id'=>(int)db()->lastInsertId()],'Grade added');
+case 'grade_update':
+    $u=requirePermission('master.grade');$d=body();
+    $id=(int)($d['grade_id']??0);
+    $density=(float)($d['packing_density']??0);
+    $minWeight=(float)($d['min_bag_weight']??0);
+    $maxWeight=(float)($d['max_bag_weight']??0);
+    if(!$id) fail('grade_id is required');
+    if($density<=0) fail('Packing Density must be greater than 0');
+    if($minWeight<=0||$maxWeight<=0) fail('Minimum and Maximum Bag Weight are required');
+    if($minWeight>$maxWeight) fail('Minimum Bag Weight cannot be greater than Maximum Bag Weight');
+    $st=db()->prepare('UPDATE tea_grades SET packing_density=?,min_bag_weight=?,max_bag_weight=? WHERE grade_id=?');
+    $st->execute([$density,$minWeight,$maxWeight,$id]);
+    if(!$st->rowCount()){ $chk=db()->prepare('SELECT grade_id FROM tea_grades WHERE grade_id=?');$chk->execute([$id]);if(!$chk->fetchColumn()) fail('Grade not found',404); }
+    logActivity('UPDATE','MASTER','Updated grade storage profile #'.$id);
+    ok([],'Grade storage profile updated');
 case 'grn_invoice_candidates':
     requirePermission('warehousing.grn_add_edit');
     $date=trim((string)($_GET['date']??''));$broker=trim((string)($_GET['broker']??''));$buyer=trim((string)($_GET['buyer']??''));$mark=trim((string)($_GET['mark']??''));$q=trim((string)($_GET['q']??''));$turnNo=trim((string)($_GET['turn_no']??''));$editingGrn=(int)($_GET['grn_id']??0);
@@ -734,6 +578,9 @@ case 'invoice_ai_recommend':
     requireAnyPermission(['warehousing.invoice_add','warehousing.invoice_edit','warehousing.ai_allocation']);
     $d = $method === 'POST' ? body() : $_GET;
     $result = recommendInvoiceLocations($d, 12);
+    if (!empty($result['profile']['grade_error'])) {
+        fail((string)$result['profile']['grade_error'], 422, ['data'=>$result]);
+    }
     if (!$result['candidates']) {
         ok($result, 'No safe location candidates are available for the entered details');
     }
@@ -741,69 +588,72 @@ case 'invoice_ai_recommend':
 case 'invoice_create':
     $u=requirePermission('warehousing.invoice_add');
     $d=body();
-    $no=trim((string)($d['invoiceNo']??''));
-    $arrivalTurnNo=trim((string)($d['turnNo']??$d['arrivalTurnNo']??''));
-    $chests=max(0,(int)($d['chests']??0));
-    $netEachRaw=$d['netWeightEach']??null;
-    $netEach=($netEachRaw!==null&&$netEachRaw!=='')?(float)$netEachRaw:0.0;
-    if($no==='')fail('Invoice number is required');
-    if($arrivalTurnNo==='')fail('Arrival / Turn Number is required so GRN can auto-load the arrival');
-    if($chests<=0)fail('Chests must be greater than 0');
-    if($netEach<=0)fail('Net Weight Each must be greater than 0 so net weight and safe location can be calculated');
-    $totalNetWeight=round($chests*$netEach,2); // authoritative backend calculation
-    $autoAllocate=!empty($d['autoAllocate']);
-    $selectedLocation=(int)($d['locationId']??0);
-    $recommendation=recommendInvoiceLocations($d, 8000);
-    $plan=[];
-    $allocationType='MANUAL';
-
-    if($autoAllocate){
-        if(!$recommendation['can_allocate']){
-            fail('Automatic location allocation could not fit the full invoice safely. Remaining chests: '.(int)$recommendation['remaining_bags'],400,['recommendation'=>$recommendation]);
-        }
-        $plan=$recommendation['plan'];
-        $allocationType='AI';
-    }elseif($selectedLocation){
-        $candidate=null;
-        foreach($recommendation['candidates'] as $c){if((int)$c['location_id']===$selectedLocation){$candidate=$c;break;}}
-        if(!$candidate)fail('Selected location does not pass the current capacity/safety rules');
-        if((int)$candidate['usable_bags']<$chests)fail('Selected location cannot hold all chests. Enable AI Auto Allocate to split across safe locations.');
-        $plan=[[ 'location_id'=>$candidate['location_id'],'location_code'=>$candidate['location_code'],'rack_code'=>$candidate['rack_code'],'level_code'=>$candidate['level_code'],'chests_allocated'=>$chests,'weight_allocated'=>$totalNetWeight,'score'=>$candidate['score'],'reason'=>$candidate['reason'] ]];
-    }
-
-    $primary=$plan[0]??null;
-    $explanation=$primary ? ($primary['reason']??'') : null;
     $pdo=db();
     $pdo->beginTransaction();
     try{
-        $st=$pdo->prepare('INSERT INTO warehouse_invoices(invoice_year,invoice_no,mark,selling_mark,grade,packing_type,chest_type,broker,buyer,chests,weight_per_chest,net_weight_each,total_net_weight,total_gross_weight,moisture_content,mfd_date,sample_drawn,reprint,exportable,colour_separated,store,invoice_date,arrival_turn_no,arrival_vehicle_no,arrival_driver_name,arrival_driver_nic,location_id,location_code,allocation_score,allocation_model,allocation_explanation,allocation_type,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-        $st->execute([
-            (int)($d['invoiceYear']??date('Y')),$no,$d['mark']??null,$d['sellingMark']??null,$d['grade']??null,
-            $d['packingType']??null,$d['chestType']??null,$d['broker']??null,$d['buyer']??null,$chests,
-            (float)($d['weightPerChest']??0),$netEach,$totalNetWeight,
-            isset($d['totalGrossWeight'])&&$d['totalGrossWeight']!==''?(float)$d['totalGrossWeight']:null,
-            isset($d['moistureContent'])&&$d['moistureContent']!==''?(float)$d['moistureContent']:null,
-            $d['mfdDate']??null,!empty($d['sampleDrawn'])?1:0,!empty($d['reprint'])?1:0,!empty($d['exportable'])?1:0,!empty($d['colourSeparated'])?1:0,
-            $d['store']??null,$d['date']??date('Y-m-d'),
-            $arrivalTurnNo,($d['vehicleNo']??$d['arrivalVehicleNo']??null)?:null,($d['driverName']??$d['arrivalDriverName']??null)?:null,($d['driverNic']??$d['arrivalDriverNic']??null)?:null,
-            $primary['location_id']??null,$primary['location_code']??null,$primary['score']??null,
-            $autoAllocate?($recommendation['model_version']??'INVOICE-WEIGHTED-2026.2'):($selectedLocation?'MANUAL':null),
-            $explanation,$plan?$allocationType:null,$u['user_id']
-        ]);
-        $id=(int)$pdo->lastInsertId();
-        if($plan){
-            reserveInvoiceAllocation($pdo,$id,$plan,$recommendation['profile'],$u['user_id'],$allocationType);
-        }
-        if($autoAllocate && $primary){
-            $pdo->prepare('INSERT INTO invoice_ai_recommendations(invoice_id,requested_chests,bag_weight,total_net_weight,recommended_location_id,score,allocation_plan_json,alternatives_json,explanation,rule_version,model_version,decision,final_location_id,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-                ->execute([$id,$chests,$netEach,$totalNetWeight,$primary['location_id'],$primary['score'],json_encode($plan),json_encode(array_slice($recommendation['candidates'],0,5)),$explanation,$recommendation['rule_version'],$recommendation['model_version'],'ACCEPTED',$primary['location_id'],$u['user_id']]);
-        }
+        $result=createInvoiceWithinTransaction($pdo,$u,$d);
         $pdo->commit();
-        logActivity('CREATE','INVOICE',$no.($plan?' | Auto allocated '.implode(', ',array_map(fn($x)=>$x['location_code'].' x'.$x['chests_allocated'],$plan)):' | Saved without allocation'));
-        ok(['invoice_id'=>$id,'invoice_no'=>$no,'total_net_weight'=>$totalNetWeight,'allocation_plan'=>$plan,'model_version'=>$recommendation['model_version']??null],$plan?'Invoice saved and location allocated successfully':'Invoice saved successfully');
+        $plan=$result['allocation_plan']??[];
+        logActivity('CREATE','INVOICE',$result['invoice_no'].($plan?' | Auto allocated '.implode(', ',array_map(fn($x)=>$x['location_code'].' x'.$x['chests_allocated'],$plan)):' | Saved without allocation'));
+        ok($result,$plan?'Invoice saved and location allocated successfully':'Invoice saved successfully');
     }catch(Throwable $e){
         if($pdo->inTransaction())$pdo->rollBack();
-        fail($e->getCode()==='23000'?'Invoice number already exists':$e->getMessage(),400);
+        $msg=$e->getCode()==='23000'?'Invoice number already exists':$e->getMessage();
+        fail($msg,400);
+    }
+case 'invoice_create_turn':
+    $u=requirePermission('warehousing.invoice_add');
+    $d=body();
+    $turn=is_array($d['turn']??null)?$d['turn']:[];
+    $invoices=is_array($d['invoices']??null)?$d['invoices']:[];
+    if(!$invoices) fail('Add at least one invoice to the turn before saving');
+    $turnNo=trim((string)($turn['turnNo']??$turn['arrivalTurnNo']??''));
+    $broker=trim((string)($turn['broker']??''));
+    if($turnNo==='') fail('Turn No is required');
+    if($broker==='') fail('Broker is required');
+
+    $seen=[];
+    foreach($invoices as $item){
+        $n=strtoupper(trim((string)($item['invoiceNo']??'')));
+        if($n==='') fail('Every grid row must have an Invoice Number');
+        if(isset($seen[$n])) fail('Duplicate invoice number in this turn: '.$n);
+        $seen[$n]=true;
+    }
+
+    $pdo=db();
+    $pdo->beginTransaction();
+    try{
+        $saved=[];
+        foreach($invoices as $item){
+            if(!is_array($item)) throw new RuntimeException('Invalid invoice row');
+            // Turn/header values are authoritative for every invoice in this save.
+            $payload=array_merge($item,[
+                'broker'=>$broker,
+                'turnNo'=>$turnNo,
+                'store'=>$turn['store']??'BrewSmart Warehouse',
+                'date'=>$turn['date']??date('Y-m-d'),
+                'vehicleNo'=>$turn['vehicleNo']??null,
+                'driverName'=>$turn['driverName']??null,
+                'driverNic'=>$turn['driverNic']??null,
+                'invoiceYear'=>$item['invoiceYear']??($turn['invoiceYear']??date('Y'))
+            ]);
+            $saved[]=createInvoiceWithinTransaction($pdo,$u,$payload);
+        }
+        $pdo->commit();
+        $totalBags=array_sum(array_map(fn($x)=>(int)($x['chests']??0),$invoices));
+        $totalWeight=array_sum(array_map(fn($x)=>(float)($x['totalNetWeight']??((float)($x['chests']??0)*(float)($x['netWeightEach']??0))),$invoices));
+        logActivity('CREATE','TURN',$turnNo.' | '.count($saved).' invoices | '.$totalBags.' bags');
+        ok([
+            'turn_no'=>$turnNo,
+            'invoice_count'=>count($saved),
+            'total_bags'=>$totalBags,
+            'total_net_weight'=>round($totalWeight,2),
+            'invoices'=>$saved
+        ],'Turn saved successfully with all invoices and warehouse allocations');
+    }catch(Throwable $e){
+        if($pdo->inTransaction())$pdo->rollBack();
+        $msg=$e->getCode()==='23000'?'One of the invoice numbers already exists':$e->getMessage();
+        fail($msg,400);
     }
 case 'invoice_list':
     requireAnyPermission(['warehousing.invoice_edit','warehousing.invoice_download','warehousing.inquiry','warehousing.reports']);
@@ -841,6 +691,10 @@ case 'invoice_get':
 case 'invoice_update':
     $u=requirePermission('warehousing.invoice_edit');$d=body();$id=(int)($d['invoice_id']??$d['invoiceId']??0);if(!$id)fail('invoice_id is required');
     $curSt=db()->prepare('SELECT * FROM warehouse_invoices WHERE invoice_id=?');$curSt->execute([$id]);$cur=$curSt->fetch();if(!$cur)fail('Invoice not found',404);
+    $effectiveGrade=trim((string)($d['grade']??$cur['grade']??''));
+    $effectiveWeight=(float)($d['netWeightEach']??$cur['net_weight_each']??0);
+    $gradeCheck=gradeStorageProfile(db(),$effectiveGrade,$effectiveWeight);
+    if(empty($gradeCheck['valid'])) fail((string)$gradeCheck['error'],422);
     $map=['invoiceYear'=>'invoice_year','mark'=>'mark','sellingMark'=>'selling_mark','grade'=>'grade','packingType'=>'packing_type','chestType'=>'chest_type','broker'=>'broker','buyer'=>'buyer','chests'=>'chests','weightPerChest'=>'weight_per_chest','netWeightEach'=>'net_weight_each','totalGrossWeight'=>'total_gross_weight','moistureContent'=>'moisture_content','mfdDate'=>'mfd_date','store'=>'store','date'=>'invoice_date','turnNo'=>'arrival_turn_no','arrivalTurnNo'=>'arrival_turn_no','vehicleNo'=>'arrival_vehicle_no','arrivalVehicleNo'=>'arrival_vehicle_no','driverName'=>'arrival_driver_name','arrivalDriverName'=>'arrival_driver_name','driverNic'=>'arrival_driver_nic','arrivalDriverNic'=>'arrival_driver_nic'];
     $sets=[];$params=[];
     foreach($map as $k=>$col){if(array_key_exists($k,$d)){$sets[]="$col=?";$val=$d[$k];$params[]=($val==='')?null:$val;}}

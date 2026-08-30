@@ -9,7 +9,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Reports from "./pages/warehouse/Reports";
 import InvoiceInquiry from "./pages/warehouse/InvoiceInquiry";
 import LocationInquiry from "./pages/warehouse/LocationInquiry";
-import WarehouseMaster from "./pages/warehouse/WarehouseMaster";
+import WarehouseDashboard from "./pages/warehouse/WarehouseDashboard";
 import InvoiceEntryAdd from "./pages/warehouse/bin-operation/InvoiceEntryAdd";
 import InvoiceEntryEdit from "./pages/warehouse/bin-operation/InvoiceEntryEdit";
 import GRNPrint from "./pages/warehouse/bin-operation/GRNPrint";
@@ -32,10 +32,10 @@ function App() {
         <Route path="/brokering" element={secure("brokering.home", <Brokering />)} />
         <Route path="/warehousing" element={secure("warehousing.home", <Warehousing />)} />
 
+        <Route path="/warehousing/dashboard" element={secure("warehousing.dashboard", <WarehouseDashboard />)} />
         <Route path="/warehousing/reports" element={secure("warehousing.reports", <Reports />)} />
         <Route path="/warehousing/inquiry" element={secure("warehousing.inquiry", <InvoiceInquiry />)} />
         <Route path="/warehousing/inquiry/location" element={secure("warehousing.location_inquiry", <LocationInquiry />)} />
-        <Route path="/warehousing/master" element={secure("warehousing.master", <WarehouseMaster />)} />
 
         <Route
           path="/warehousing/bin-operation/invoice-entry/add"
@@ -69,6 +69,8 @@ function App() {
           element={secure("master.access_manager", <Master section="access-manager" />)}
         />
         <Route path="/master/broker" element={secure("master.broker", <Master section="broker" />)} />
+        <Route path="/master/buyer" element={secure("master.buyer", <Master section="buyer" />)} />
+        <Route path="/master/auction-calendar" element={secure("master.auction_calendar", <Master section="auction-calendar" />)} />
         <Route path="/master/mark" element={secure("master.mark", <Master section="mark" />)} />
         <Route path="/master/grade" element={secure("master.grade", <Master section="grade" />)} />
         <Route

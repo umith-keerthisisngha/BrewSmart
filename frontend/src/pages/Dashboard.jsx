@@ -1,15 +1,61 @@
+import { API_BASE as API } from "../config/api";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import usePermissions from "../hooks/usePermissions";
+import brewSmartLogo from "../assets/brewsmart-logo.png";
 import "./Dashboard.css";
 
-const API = "http://localhost/BrewSmart/backend/api";
+
+const getGreeting = (date = new Date()) => {
+  const hour = date.getHours();
+  if (hour < 12) return "Good Morning";
+  if (hour < 17) return "Good Afternoon";
+  if (hour < 21) return "Good Evening";
+  return "Good Night";
+};
+
+const formatClock = (date) =>
+  new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+
+const ModuleIcon = ({ type }) => {
+  if (type === "brokering") {
+    return (
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M8 20.5 17.5 11l8 6.5L33 12l7 7-12.5 13.5a5 5 0 0 1-7.2.1L8 20.5Z" />
+        <path d="m15 27 5 5m0-10 7 7m-3-12 8 8" />
+      </svg>
+    );
+  }
+  if (type === "warehouse-dashboard") {
+    return (
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="7" y="8" width="34" height="32" rx="6" />
+        <path d="M14 31V24m10 7V17m10 14v-9" />
+        <path d="M12 36h24" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 48 48" aria-hidden="true">
+      <path d="M6 19 24 8l18 11v21H6V19Z" />
+      <path d="M14 40V25h20v15M10 19h28" />
+      <path d="M20 31h8" />
+    </svg>
+  );
+};
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [displayName, setDisplayName] = useState("");
   const [sessionLoading, setSessionLoading] = useState(true);
+  const [now, setNow] = useState(new Date());
   const { loading: permissionsLoading, permissions, can } = usePermissions();
 
   useEffect(() => {
@@ -22,6 +68,11 @@ export default function Dashboard() {
       .catch(() => navigate("/login"))
       .finally(() => setSessionLoading(false));
   }, [navigate]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const firstAllowedRoute = (prefix, fallback) => {
     if (can(`${prefix}.home`)) return fallback;
@@ -39,10 +90,15 @@ export default function Dashboard() {
     );
     return master?.route_path || null;
   }, [permissions, can]);
+
   const warehousingRoute = useMemo(
     () => firstAllowedRoute("warehousing", "/warehousing"),
     [permissions, can]
   );
+
+  const warehouseDashboardRoute = can("warehousing.dashboard")
+    ? "/warehousing/dashboard"
+    : null;
 
   const handleLogout = async () => {
     await axios.post(`${API}/auth/logout.php`, {}, { withCredentials: true });
@@ -51,56 +107,76 @@ export default function Dashboard() {
 
   if (sessionLoading || permissionsLoading) return null;
 
+  const modules = [
+    brokeringRoute && {
+      key: "brokering",
+      label: "BROKERING",
+      iconType: "brokering",
+      route: brokeringRoute,
+    },
+    warehousingRoute && {
+      key: "warehousing",
+      label: "WAREHOUSING",
+      iconType: "warehousing",
+      route: warehousingRoute,
+    },
+    warehouseDashboardRoute && {
+      key: "warehouse-dashboard",
+      label: "WAREHOUSE DASHBOARD",
+      iconType: "warehouse-dashboard",
+      route: warehouseDashboardRoute,
+    },
+  ].filter(Boolean);
+
   return (
     <div className="dashboard-page">
-      <div className="dashboard-overlay"></div>
-
       <div className="dashboard-container">
-        <div className="brand">
-          <div className="leaf-logo">
-            <svg viewBox="0 0 64 64">
-              <path d="M49 8C29 10 15 20 15 36c0 9 6 16 15 16 16 0 25-16 19-44Z" />
-              <path d="M14 54C25 42 33 32 47 20" />
-            </svg>
-          </div>
-          <h1>Brew<span>Smart</span></h1>
+        <img
+          className="dashboard-logo-image"
+          src={brewSmartLogo}
+          alt="BrewSmart"
+        />
+
+        <div className="dashboard-welcome-block">
+          <span className="dashboard-eyebrow">BREWSMART OPERATIONS PORTAL</span>
+          <h1 className="greeting">{getGreeting(now)},</h1>
+          <h2 className="username">{displayName || "User"}</h2>
+          <p className="dashboard-clock">{formatClock(now)}</p>
         </div>
 
-        <h2 className="greeting">Good Morning!</h2>
-        <h3 className="username">{displayName},</h3>
-        <p className="welcome">Welcome to <span>BrewSmart</span></p>
-        <div className="divider-icon">🍃</div>
-
-        <button className="logout-button" onClick={handleLogout}>⏻ LOGOUT</button>
+        <div className="dashboard-actions">
+          <span className="dashboard-status"><i></i> System ready</span>
+          <button className="logout-button" onClick={handleLogout}>LOGOUT</button>
+        </div>
 
         <div className="dashboard-cards">
-          {brokeringRoute && (
-            <div className="dashboard-card" onClick={() => navigate(brokeringRoute)}>
-              <div className="card-icon">⚖️</div>
-              <p>BROKERING</p>
-            </div>
-          )}
-
-          {warehousingRoute && (
-            <div className="dashboard-card" onClick={() => navigate(warehousingRoute)}>
-              <div className="card-icon">🗄️</div>
-              <p>WAREHOUSING</p>
-            </div>
-          )}
+          {modules.map((module) => (
+            <button
+              type="button"
+              key={module.key}
+              className="dashboard-card"
+              onClick={() => navigate(module.route)}
+            >
+              <span className="card-icon"><ModuleIcon type={module.iconType} /></span>
+              <span className="card-copy">
+                <strong>{module.label}</strong>
+              </span>
+              <span className="card-arrow">→</span>
+            </button>
+          ))}
         </div>
 
-        {!brokeringRoute && !warehousingRoute && (
-          <p style={{ marginTop: 16, color: "#eee", fontWeight: 600 }}>
-            No application functions are assigned to this user. Contact an Administrator or Manager.
+        {!modules.length && (
+          <p className="dashboard-empty">
+            No application functions are assigned to this account. Contact an Administrator or Manager.
           </p>
         )}
       </div>
 
       <div className="dashboard-footer">
-        <span className="footer-icon">🍃</span>
         <span>BrewSmart Tea Warehouse Management System</span>
-        <span className="footer-divider">|</span>
-        <span className="footer-green">Empowering Efficiency, Ensuring Quality</span>
+        <span className="footer-divider">•</span>
+        <span className="footer-green">Smart Warehouse. Stronger Future.</span>
       </div>
     </div>
   );

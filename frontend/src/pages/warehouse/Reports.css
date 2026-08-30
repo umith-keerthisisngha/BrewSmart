@@ -82,3 +82,53 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* Premium dark theme alignment with Master > User Access */
+.rpt-select-trigger {
+  min-height: 38px;
+  padding: 9px 11px;
+  background: #0b100c;
+  color: #eef4ee;
+  border-color: rgba(149,185,139,.18);
+  border-radius: 10px;
+}
+.rpt-select-trigger:hover { border-color: rgba(122,191,67,.55); }
+.rpt-caret { color: #7f8d82; }
+.rpt-select-menu {
+  background: linear-gradient(180deg,rgba(18,25,19,.99),rgba(9,14,10,.99));
+  border-color: rgba(149,185,139,.16);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.38);
+}
+.rpt-select-option { color: #dce5dd; font-size: 12px; }
+.rpt-select-option:hover { background: rgba(109,172,63,.08); color: #a7d780; }
+.rpt-select-option-active { background: rgba(109,172,63,.18); color: #a7d780; }
+.rpt-select-placeholder { color: #6e7a70; border-bottom-color: rgba(255,255,255,.045); }
+.rpt-pdf-btn { background: linear-gradient(135deg,#356d48,#245335); border-color: rgba(120,185,111,.28); }
+.rpt-pdf-btn:hover:not(:disabled) { background: linear-gradient(135deg,#3f7d53,#2c603d); border-color: rgba(120,185,111,.38); }
+
+
+/* Report selector must escape the shared card clipping used by the premium UI. */
+.rpt-panel {
+  overflow: visible !important;
+  position: relative;
+  z-index: 5;
+}
+.rpt-panel .wp-panel-header {
+  border-radius: 16px 16px 0 0 !important;
+}
+.rpt-panel .wp-panel-body {
+  overflow: visible !important;
+}
+.rpt-select-wrap {
+  z-index: 20;
+}
+.rpt-select-menu {
+  z-index: 1000 !important;
+  max-height: min(420px, 55vh);
+  overscroll-behavior: contain;
+}
+.rpt-select-trigger:focus-visible {
+  outline: 2px solid rgba(122,191,67,.7);
+  outline-offset: 2px;
+}

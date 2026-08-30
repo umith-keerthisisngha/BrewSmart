@@ -1,9 +1,9 @@
+import { API_BASE as API } from "../../../config/api";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import FormShell, { Field } from "../../../components/warehouse/FormShell";
 import "./ReceivingIssuing.css";
 
-const API = "http://localhost/BrewSmart/backend/api";
 const DEFAULT_STORE = "BrewSmart Warehouse";
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -24,6 +24,7 @@ const emptyHeader = () => ({
 export default function GINAdd() {
   const [header, setHeader] = useState(emptyHeader);
   const [marks, setMarks] = useState([]);
+  const [buyers, setBuyers] = useState([]);
   const [search, setSearch] = useState({ invoiceNo: "", mark: "", sellingMark: "" });
   const [results, setResults] = useState([]);
   const [activeInvoice, setActiveInvoice] = useState(null);
@@ -35,8 +36,11 @@ export default function GINAdd() {
 
   useEffect(() => {
     axios.get(`${API}/meta.php`, { withCredentials: true })
-      .then((res) => setMarks(res.data.data?.marks || []))
-      .catch(() => setMarks([]));
+      .then((res) => {
+        setMarks(res.data.data?.marks || []);
+        setBuyers(res.data.data?.buyers || []);
+      })
+      .catch(() => { setMarks([]); setBuyers([]); });
   }, []);
 
   const setH = (key) => (e) => setHeader((h) => ({ ...h, [key]: e.target.value }));
@@ -148,7 +152,7 @@ export default function GINAdd() {
           <div className="bi-section-title">Sale / Buyer Information</div>
           <div className="bi-section-body">
             <div className="bi-grid-3">
-              <Field label="Buyer *"><input className="wp-input" value={header.buyer} onChange={setH("buyer")} /></Field>
+              <Field label="Buyer *"><select className="wp-input" value={header.buyer} onChange={setH("buyer")}><option value="">-- Select Buyer --</option>{buyers.map((b) => <option key={b.buyer_id || b.buyer_code} value={b.buyer_name}>{b.buyer_code} - {b.buyer_name}</option>)}</select></Field>
               <Field label="Sale Type">
                 <select className="wp-input" value={header.saleType} onChange={setH("saleType")}>
                   <option>Auction Sale</option><option>Private Sale</option><option>Direct Dispatch</option>

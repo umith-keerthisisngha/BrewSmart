@@ -1,0 +1,13 @@
+{
+  "model": "BREWSMART-MCDM-2026.3",
+  "weights": {
+    "capacity_fit": 0.28,
+    "weight_fit": 0.17,
+    "consolidation": 0.20,
+    "rack_balance": 0.13,
+    "accessibility": 0.10,
+    "adjacency": 0.07,
+    "fragmentation": 0.05
+  },
+  "note": "Transparent weights used when reviewed historical data is insufficient for supervised ML."
+}

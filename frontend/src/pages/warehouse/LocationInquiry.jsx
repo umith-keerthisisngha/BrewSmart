@@ -1,3 +1,4 @@
+import { API_BASE as API } from "../../config/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -5,7 +6,6 @@ import { WarehouseHeader, WarehouseFooter } from "../../components/warehouse/War
 import usePermissions from "../../hooks/usePermissions";
 import "./LocationInquiry.css";
 
-const API = "http://localhost/BrewSmart/backend/api";
 const LEVELS = ["F", "E", "D", "C", "B", "A"];
 const POSITIONS = Array.from({ length: 60 }, (_, i) => i + 1);
 

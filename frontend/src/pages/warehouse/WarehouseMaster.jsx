@@ -1,10 +1,10 @@
+import { API_BASE as API } from "../../config/api";
 import { WarehouseHeader, WarehouseFooter } from "../../components/warehouse/WarehouseHeader";
 import "../../components/warehouse/WarehousePage.css";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 
-const API = "http://localhost/BrewSmart/backend/api";
 
 // Entities backed by a real backend table today.
 const LIVE_ENTITIES = {
@@ -200,7 +200,7 @@ export default function WarehouseMaster() {
                   style={{
                     margin: 0,
                     cursor: "pointer",
-                    outline: selected === name ? "2px solid #2f7a3e" : "none",
+                    outline: selected === name ? "2px solid #78b943" : "none",
                   }}
                   onClick={() => openEntity(name)}
                 >
@@ -259,10 +259,10 @@ export default function WarehouseMaster() {
                   <div
                     style={{
                       marginTop: 14,
-                      border: "1px dashed #6baa2e",
-                      borderRadius: 6,
+                      border: "1px dashed rgba(122,191,67,.42)",
+                      borderRadius: 12,
                       padding: 12,
-                      background: "#f7fbf4",
+                      background: "rgba(109,172,63,.055)",
                       maxWidth: 420,
                     }}
                   >

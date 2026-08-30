@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { API_BASE } from "../config/api";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./Login.css";
 import bgImage from "../assets/tea-background.jpg";
+import brewSmartLogo from "../assets/brewsmart-logo.png";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -12,18 +14,25 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    const saved = localStorage.getItem("brewsmart.rememberedUsername");
+    if (saved) setUsername(saved);
+  }, []);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
 
     try {
       const res = await axios.post(
-  "http://localhost/BrewSmart/backend/api/auth/login.php",
+  `${API_BASE}/auth/login.php`,
   { username, password },
   { withCredentials: true }
       );
 
       if (res.data.success) {
+        if (rememberMe) localStorage.setItem("brewsmart.rememberedUsername", username);
+        else localStorage.removeItem("brewsmart.rememberedUsername");
         navigate("/dashboard");
       }
     } catch (err) {
@@ -45,21 +54,8 @@ export default function Login() {
       <div className="login-container">
 
         {/* Logo */}
-        <div className="brand">
-          <div className="leaf-logo">
-            <svg viewBox="0 0 64 64">
-              <path
-                d="M49 8C29 10 15 20 15 36c0 9 6 16 15 16
-                16 0 25-16 19-44Z"
-              />
-              <path d="M14 54C25 42 33 32 47 20" />
-            </svg>
-          </div>
-
-          <h1>
-            Brew<span>Smart</span>
-          </h1>
-
+        <div className="brand login-brand-logo">
+          <img className="login-logo-image" src={brewSmartLogo} alt="BrewSmart - Smart Warehouse. Stronger Future." />
           <p>Please enter your credentials to access the system</p>
         </div>
 
@@ -152,12 +148,6 @@ export default function Login() {
                 <span>Remember me</span>
               </label>
 
-              <button
-                type="button"
-                className="forgot-password"
-              >
-                Forgot password?
-              </button>
 
             </div>
 

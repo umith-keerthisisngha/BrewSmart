@@ -256,3 +256,104 @@
 }
 .wh-inquiry-menu .wh-mega-item { color: #f5f7f3; padding: 11px 16px; white-space: nowrap; }
 .wh-inquiry-menu .wh-mega-item:hover { background: #315f20; color: #fff; }
+
+/* =====================================================================
+   BrewSmart premium internal theme — aligned with Brokering User Access
+   ===================================================================== */
+.wh-navbar {
+  min-height: 72px;
+  padding: 0 34px;
+  background: rgba(4, 8, 5, 0.92);
+  border-bottom: 1px solid rgba(153, 196, 137, 0.13);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  position: sticky;
+  top: 0;
+  z-index: 120;
+}
+.wh-brand { gap: 8px; }
+.wh-leaf-logo svg { width: 30px; height: 30px; stroke: #78b943; }
+.wh-brand-text { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: #f3f7f2; }
+.wh-brand-text span { color: #78b943; }
+.wh-navbar-right { gap: 14px; }
+.wh-logged-label { font-size: 10px; color: #819084; text-transform: uppercase; letter-spacing: 1.2px; }
+.wh-user-name { font-size: 13px; color: #eef4ee; }
+.wh-logout-button {
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #6faf40, #4b8b32);
+  font-size: 11px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+}
+.wh-logout-button:hover { background: linear-gradient(135deg, #79ba48, #568f39); transform: translateY(-1px); }
+
+.wh-nav-links {
+  min-height: 48px;
+  gap: 30px;
+  padding: 0 34px;
+  background: rgba(7, 12, 8, 0.96);
+  border-bottom: 1px solid rgba(153, 196, 137, 0.10);
+  position: sticky;
+  top: 72px;
+  z-index: 110;
+}
+.wh-nav-links > span,
+.wh-nav-dropdown > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .8px;
+  color: #aeb9b0;
+}
+.wh-nav-links > span.active,
+.wh-nav-dropdown > span.active { color: #9ad36d; border-bottom: 2px solid #78b943; }
+.wh-nav-links > span:hover,
+.wh-nav-dropdown > span:hover { color: #9ad36d; }
+
+.wh-mega-menu,
+.wh-inquiry-menu {
+  margin-top: 0;
+  background: linear-gradient(180deg, rgba(18, 25, 19, 0.99), rgba(9, 14, 10, 0.99));
+  border: 1px solid rgba(149, 185, 139, 0.16);
+  border-radius: 13px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.42);
+  padding: 14px 18px;
+}
+.wh-mega-heading { color: #719163; font-size: 9px; letter-spacing: 1.4px; }
+.wh-mega-item {
+  color: #dce5dd;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255,255,255,.045);
+  padding: 9px 0;
+}
+.wh-inquiry-menu .wh-mega-item { padding: 11px 14px; color: #dce5dd; }
+.wh-mega-item:hover,
+.wh-inquiry-menu .wh-mega-item:hover { color: #a7d780; background: rgba(109,172,63,.08); padding-left: 6px; }
+
+.wh-footer {
+  padding: 28px 20px 32px;
+  background: #050805;
+  border-top: 1px solid rgba(149,185,139,.10);
+}
+.wh-footer-title { color: #eef4ee; }
+.wh-footer-icon, .wh-legal { color: #78b943; }
+.wh-copyright { color: #768279; }
+
+@media (max-width: 900px) {
+  .wh-navbar { position: relative; min-height: auto; padding: 16px 18px; }
+  .wh-nav-links { position: relative; top: 0; padding: 0 18px; gap: 18px; }
+}
+
+
+/* Supplied BrewSmart logo */
+.wh-logo-image {
+  display: block;
+  width: 124px;
+  max-height: 48px;
+  object-fit: contain;
+  object-position: left center;
+}
+@media (max-width: 720px) { .wh-logo-image { width: 112px; } }

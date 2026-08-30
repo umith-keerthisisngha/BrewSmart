@@ -1,3 +1,4 @@
+import { API_BASE as API } from "../../config/api";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -5,7 +6,6 @@ import { WarehouseHeader, WarehouseFooter } from "../../components/warehouse/War
 import "../../components/warehouse/WarehousePage.css";
 import "./InvoiceInquiry.css";
 
-const API = "http://localhost/BrewSmart/backend/api";
 
 const TABS = [
   { key: "invoice", label: "Invoices", live: true },

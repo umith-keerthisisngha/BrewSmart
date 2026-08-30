@@ -1,8 +1,8 @@
+import { API_BASE as API } from "../config/api";
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import axios from "axios";
 
-const API = "http://localhost/BrewSmart/backend/api";
 
 export default function ProtectedRoute({ permissionKey, pageKey, children }) {
   const key = permissionKey || pageKey;
