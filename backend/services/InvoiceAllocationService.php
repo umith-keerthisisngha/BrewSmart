@@ -326,15 +326,157 @@ function releaseInvoiceAllocations(PDO $pdo, int $invoiceId): void {
     $pdo->prepare('DELETE FROM invoice_location_allocations WHERE invoice_id=?')->execute([$invoiceId]);
 }
 
+
+function loadArrivalTurnHeader(PDO $pdo, string $turnNo): ?array {
+    $turnNo = trim($turnNo);
+    if ($turnNo === '') return null;
+
+    try {
+        $st = $pdo->prepare('SELECT turn_id,turn_no,turn_date,store,vehicle_no,driver_name,driver_nic,created_by,created_at,updated_at FROM arrival_turns WHERE turn_no=? LIMIT 1');
+        $st->execute([$turnNo]);
+        $row = $st->fetch();
+        if ($row) return $row;
+    } catch (Throwable $e) {
+        // Backward compatibility for installations that have not created arrival_turns yet.
+    }
+
+    try {
+        $st = $pdo->prepare("SELECT
+                NULL turn_id,
+                arrival_turn_no turn_no,
+                MIN(invoice_date) turn_date,
+                MAX(COALESCE(NULLIF(store,''),'BrewSmart Warehouse')) store,
+                MAX(NULLIF(arrival_vehicle_no,'')) vehicle_no,
+                MAX(NULLIF(arrival_driver_name,'')) driver_name,
+                MAX(NULLIF(arrival_driver_nic,'')) driver_nic,
+                MIN(created_by) created_by,
+                MIN(created_at) created_at,
+                MAX(created_at) updated_at
+            FROM warehouse_invoices
+            WHERE arrival_turn_no=?
+            GROUP BY arrival_turn_no
+            LIMIT 1");
+        $st->execute([$turnNo]);
+        $row = $st->fetch();
+        return $row ?: null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+function ensureArrivalTurnHeader(PDO $pdo, array $u, array $d): array {
+    $turnNo = trim((string)($d['turnNo'] ?? $d['arrivalTurnNo'] ?? ''));
+    if ($turnNo === '') throw new RuntimeException('Turn No is required');
+
+    $provided = [
+        'turn_no' => $turnNo,
+        'turn_date' => trim((string)($d['turnDate'] ?? $d['arrivalTurnDate'] ?? $d['date'] ?? date('Y-m-d'))),
+        'store' => trim((string)($d['store'] ?? 'BrewSmart Warehouse')) ?: 'BrewSmart Warehouse',
+        'vehicle_no' => trim((string)($d['vehicleNo'] ?? $d['arrivalVehicleNo'] ?? '')),
+        'driver_name' => trim((string)($d['driverName'] ?? $d['arrivalDriverName'] ?? '')),
+        'driver_nic' => trim((string)($d['driverNic'] ?? $d['arrivalDriverNic'] ?? '')),
+    ];
+
+    try {
+        $st = $pdo->prepare('SELECT * FROM arrival_turns WHERE turn_no=? FOR UPDATE');
+        $st->execute([$turnNo]);
+        $existing = $st->fetch();
+
+        if ($existing) {
+            foreach ([
+                'vehicle_no' => 'Lorry Number',
+                'driver_name' => 'Driver Name',
+                'driver_nic' => 'Driver NIC / ID Number',
+            ] as $key => $label) {
+                $old = trim((string)($existing[$key] ?? ''));
+                $new = trim((string)($provided[$key] ?? ''));
+                if ($old !== '' && $new !== '' && strcasecmp($old, $new) !== 0) {
+                    throw new RuntimeException("Turn {$turnNo} is already registered with a different {$label}. Reload the Turn details before saving.");
+                }
+            }
+
+            $vehicle = trim((string)($existing['vehicle_no'] ?? '')) ?: $provided['vehicle_no'];
+            $driver = trim((string)($existing['driver_name'] ?? '')) ?: $provided['driver_name'];
+            $nic = trim((string)($existing['driver_nic'] ?? '')) ?: $provided['driver_nic'];
+            $store = trim((string)($existing['store'] ?? '')) ?: $provided['store'];
+            $turnDate = trim((string)($existing['turn_date'] ?? '')) ?: $provided['turn_date'];
+
+            $pdo->prepare('UPDATE arrival_turns SET turn_date=?,store=?,vehicle_no=?,driver_name=?,driver_nic=? WHERE turn_id=?')
+                ->execute([$turnDate,$store,$vehicle ?: null,$driver ?: null,$nic ?: null,(int)$existing['turn_id']]);
+
+            return array_merge($existing, [
+                'turn_date'=>$turnDate,
+                'store'=>$store,
+                'vehicle_no'=>$vehicle,
+                'driver_name'=>$driver,
+                'driver_nic'=>$nic,
+            ]);
+        }
+
+        $pdo->prepare('INSERT INTO arrival_turns(turn_no,turn_date,store,vehicle_no,driver_name,driver_nic,created_by) VALUES(?,?,?,?,?,?,?)')
+            ->execute([
+                $turnNo,
+                $provided['turn_date'] ?: date('Y-m-d'),
+                $provided['store'],
+                $provided['vehicle_no'] ?: null,
+                $provided['driver_name'] ?: null,
+                $provided['driver_nic'] ?: null,
+                (int)$u['user_id'],
+            ]);
+
+        return [
+            'turn_id'=>(int)$pdo->lastInsertId(),
+            'turn_no'=>$turnNo,
+            'turn_date'=>$provided['turn_date'] ?: date('Y-m-d'),
+            'store'=>$provided['store'],
+            'vehicle_no'=>$provided['vehicle_no'],
+            'driver_name'=>$provided['driver_name'],
+            'driver_nic'=>$provided['driver_nic'],
+            'created_by'=>(int)$u['user_id'],
+        ];
+    } catch (PDOException $e) {
+        if (str_contains(strtolower($e->getMessage()), 'arrival_turns')) return $provided;
+        throw $e;
+    }
+}
+
+function invoiceMarkDuplicate(PDO $pdo, string $invoiceNo, string $mark, ?int $excludeInvoiceId = null): ?array {
+    $invoiceNo = trim($invoiceNo);
+    $mark = trim($mark);
+    if ($invoiceNo === '' || $mark === '') return null;
+
+    $sql = 'SELECT invoice_id,invoice_no,mark,broker,arrival_turn_no FROM warehouse_invoices WHERE invoice_no=? AND mark=?';
+    $params = [$invoiceNo, $mark];
+    if ($excludeInvoiceId !== null && $excludeInvoiceId > 0) {
+        $sql .= ' AND invoice_id<>?';
+        $params[] = $excludeInvoiceId;
+    }
+    $sql .= ' LIMIT 1';
+
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
+    $row = $st->fetch();
+    return $row ?: null;
+}
+
 function createInvoiceWithinTransaction(PDO $pdo, array $u, array $d): array {
     $no=trim((string)($d['invoiceNo']??''));
+    $mark=trim((string)($d['mark']??''));
     $arrivalTurnNo=trim((string)($d['turnNo']??$d['arrivalTurnNo']??''));
     $chests=max(0,(int)($d['chests']??0));
     $netEachRaw=$d['netWeightEach']??null;
     $netEach=($netEachRaw!==null&&$netEachRaw!=='')?(float)$netEachRaw:0.0;
+    if($mark==='') throw new RuntimeException('Select a Mark before entering or saving an invoice');
     if($no==='') throw new RuntimeException('Invoice number is required');
     if($arrivalTurnNo==='') throw new RuntimeException('Arrival / Turn Number is required so GRN can auto-load the arrival');
     if($chests<=0) throw new RuntimeException('Chests must be greater than 0');
+
+    $duplicate=invoiceMarkDuplicate($pdo,$no,$mark);
+    if($duplicate){
+        throw new RuntimeException('Invoice '.$no.' already exists for Mark '.$mark.'. Duplicate invoice numbers are not allowed within the same Mark.');
+    }
+
+    $turnHeader=ensureArrivalTurnHeader($pdo,$u,$d);
     if($netEach<=0) throw new RuntimeException('Net Weight Each must be greater than 0 so net weight and safe location can be calculated');
     $gradeCode=trim((string)($d['grade']??''));
     $gradeCheck=gradeStorageProfile($pdo,$gradeCode,$netEach);
@@ -376,14 +518,14 @@ function createInvoiceWithinTransaction(PDO $pdo, array $u, array $d): array {
     $explanation=$primary?($primary['reason']??''):null;
     $st=$pdo->prepare('INSERT INTO warehouse_invoices(invoice_year,invoice_no,mark,selling_mark,grade,packing_type,chest_type,broker,buyer,chests,weight_per_chest,net_weight_each,total_net_weight,total_gross_weight,moisture_content,mfd_date,sample_drawn,reprint,exportable,colour_separated,store,invoice_date,arrival_turn_no,arrival_vehicle_no,arrival_driver_name,arrival_driver_nic,location_id,location_code,allocation_score,allocation_model,allocation_explanation,allocation_type,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     $st->execute([
-        (int)($d['invoiceYear']??date('Y')),$no,$d['mark']??null,$d['sellingMark']??null,$d['grade']??null,
+        (int)($d['invoiceYear']??date('Y')),$no,$mark,$d['sellingMark']??null,$d['grade']??null,
         $d['packingType']??null,$d['chestType']??null,$d['broker']??null,null,$chests,
         (float)($d['weightPerChest']??0),$netEach,$totalNetWeight,
         isset($d['totalGrossWeight'])&&$d['totalGrossWeight']!==''?(float)$d['totalGrossWeight']:null,
         isset($d['moistureContent'])&&$d['moistureContent']!==''?(float)$d['moistureContent']:null,
         $d['mfdDate']??null,!empty($d['sampleDrawn'])?1:0,!empty($d['reprint'])?1:0,!empty($d['exportable'])?1:0,!empty($d['colourSeparated'])?1:0,
-        $d['store']??null,$d['date']??date('Y-m-d'),
-        $arrivalTurnNo,($d['vehicleNo']??$d['arrivalVehicleNo']??null)?:null,($d['driverName']??$d['arrivalDriverName']??null)?:null,($d['driverNic']??$d['arrivalDriverNic']??null)?:null,
+        ($turnHeader['store']??$d['store']??'BrewSmart Warehouse')?:'BrewSmart Warehouse',$d['date']??date('Y-m-d'),
+        $arrivalTurnNo,($turnHeader['vehicle_no']??$d['vehicleNo']??$d['arrivalVehicleNo']??null)?:null,($turnHeader['driver_name']??$d['driverName']??$d['arrivalDriverName']??null)?:null,($turnHeader['driver_nic']??$d['driverNic']??$d['arrivalDriverNic']??null)?:null,
         $primary['location_id']??null,$primary['location_code']??null,$primary['score']??null,
         $autoAllocate?($recommendation['model_version']??'INVOICE-WEIGHTED-2026.2'):($selectedLocation?'MANUAL':null),
         $explanation,$plan?$allocationType:null,$u['user_id']
@@ -403,6 +545,7 @@ function createInvoiceWithinTransaction(PDO $pdo, array $u, array $d): array {
         'invoice_no'=>$no,
         'total_net_weight'=>$totalNetWeight,
         'allocation_plan'=>$plan,
-        'model_version'=>$recommendation['model_version']??null
+        'model_version'=>$recommendation['model_version']??null,
+        'turn_header'=>$turnHeader
     ];
 }

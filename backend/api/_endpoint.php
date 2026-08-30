@@ -574,6 +574,45 @@ case 'inquiry_issued':
     if($from!==''){$sql.=' AND DATE(m.created_at)>=?';$params[]=$from;}if($to!==''){$sql.=' AND DATE(m.created_at)<=?';$params[]=$to;}
     if($q!==''){$like="%{$q}%";$sql.=' AND (m.reference_no LIKE ? OR g.gate_pass_no LIKE ? OR g.buyer LIKE ? OR g.vehicle_no LIKE ? OR wi.invoice_no LIKE ? OR wi.mark LIKE ? OR wi.grade LIKE ? OR wl.location_code LIKE ?)';$params=array_merge($params,[$like,$like,$like,$like,$like,$like,$like,$like]);}
     $sql.=' ORDER BY m.created_at DESC,m.movement_id DESC LIMIT 500';$st=db()->prepare($sql);$st->execute($params);ok($st->fetchAll());
+case 'invoice_turn_lookup':
+    requirePermission('warehousing.invoice_add');
+    $turnNo=trim((string)($_GET['turn_no']??''));
+    if($turnNo==='') fail('turn_no is required');
+    $pdo=db();
+    $header=loadArrivalTurnHeader($pdo,$turnNo);
+    if(!$header){
+        ok(['found'=>false,'turn_no'=>$turnNo,'header'=>null,'brokers'=>[]],'New Turn Number');
+    }
+    $bst=$pdo->prepare("SELECT
+            COALESCE(NULLIF(broker,''),'(Not set)') broker,
+            COUNT(*) invoice_count,
+            COUNT(DISTINCT mark) mark_count,
+            COALESCE(SUM(chests),0) bag_count,
+            ROUND(COALESCE(SUM(total_net_weight),0),2) total_net_weight,
+            MAX(created_at) last_saved_at
+        FROM warehouse_invoices
+        WHERE arrival_turn_no=?
+        GROUP BY broker
+        ORDER BY MIN(invoice_id)");
+    $bst->execute([$turnNo]);
+    ok([
+        'found'=>true,
+        'turn_no'=>$turnNo,
+        'header'=>$header,
+        'brokers'=>$bst->fetchAll()
+    ],'Turn details loaded from database');
+
+case 'invoice_duplicate_check':
+    requirePermission('warehousing.invoice_add');
+    $invoiceNo=trim((string)($_GET['invoice_no']??''));
+    $mark=trim((string)($_GET['mark']??''));
+    if($invoiceNo===''||$mark==='') fail('invoice_no and mark are required');
+    $row=invoiceMarkDuplicate(db(),$invoiceNo,$mark);
+    ok([
+        'exists'=>(bool)$row,
+        'invoice'=>$row
+    ],$row?'Duplicate invoice found for this Mark':'Invoice number is available for this Mark');
+
 case 'invoice_ai_recommend':
     requireAnyPermission(['warehousing.invoice_add','warehousing.invoice_edit','warehousing.ai_allocation']);
     $d = $method === 'POST' ? body() : $_GET;
@@ -615,9 +654,12 @@ case 'invoice_create_turn':
     $seen=[];
     foreach($invoices as $item){
         $n=strtoupper(trim((string)($item['invoiceNo']??'')));
+        $m=strtoupper(trim((string)($item['mark']??'')));
+        if($m==='') fail('Every grid row must have a Mark selected before the Invoice Number');
         if($n==='') fail('Every grid row must have an Invoice Number');
-        if(isset($seen[$n])) fail('Duplicate invoice number in this turn: '.$n);
-        $seen[$n]=true;
+        $key=$m.'|'.$n;
+        if(isset($seen[$key])) fail('Duplicate invoice '.$n.' for Mark '.$m.' in this broker batch');
+        $seen[$key]=true;
     }
 
     $pdo=db();
@@ -631,7 +673,8 @@ case 'invoice_create_turn':
                 'broker'=>$broker,
                 'turnNo'=>$turnNo,
                 'store'=>$turn['store']??'BrewSmart Warehouse',
-                'date'=>$turn['date']??date('Y-m-d'),
+                'turnDate'=>$turn['turnDate']??$turn['date']??date('Y-m-d'),
+                'date'=>$item['date']??$turn['invoiceDate']??$turn['date']??date('Y-m-d'),
                 'vehicleNo'=>$turn['vehicleNo']??null,
                 'driverName'=>$turn['driverName']??null,
                 'driverNic'=>$turn['driverNic']??null,
@@ -643,16 +686,19 @@ case 'invoice_create_turn':
         $totalBags=array_sum(array_map(fn($x)=>(int)($x['chests']??0),$invoices));
         $totalWeight=array_sum(array_map(fn($x)=>(float)($x['totalNetWeight']??((float)($x['chests']??0)*(float)($x['netWeightEach']??0))),$invoices));
         logActivity('CREATE','TURN',$turnNo.' | '.count($saved).' invoices | '.$totalBags.' bags');
+        $turnHeader=loadArrivalTurnHeader($pdo,$turnNo);
         ok([
             'turn_no'=>$turnNo,
+            'broker'=>$broker,
+            'turn_header'=>$turnHeader,
             'invoice_count'=>count($saved),
             'total_bags'=>$totalBags,
             'total_net_weight'=>round($totalWeight,2),
             'invoices'=>$saved
-        ],'Turn saved successfully with all invoices and warehouse allocations');
+        ],'Broker arrival batch saved successfully for this Turn');
     }catch(Throwable $e){
         if($pdo->inTransaction())$pdo->rollBack();
-        $msg=$e->getCode()==='23000'?'One of the invoice numbers already exists':$e->getMessage();
+        $msg=$e->getCode()==='23000'?'A duplicate Invoice Number already exists for the selected Mark':$e->getMessage();
         fail($msg,400);
     }
 case 'invoice_list':
@@ -691,11 +737,17 @@ case 'invoice_get':
 case 'invoice_update':
     $u=requirePermission('warehousing.invoice_edit');$d=body();$id=(int)($d['invoice_id']??$d['invoiceId']??0);if(!$id)fail('invoice_id is required');
     $curSt=db()->prepare('SELECT * FROM warehouse_invoices WHERE invoice_id=?');$curSt->execute([$id]);$cur=$curSt->fetch();if(!$cur)fail('Invoice not found',404);
+    $effectiveNo=trim((string)($d['invoiceNo']??$cur['invoice_no']??''));
+    $effectiveMark=trim((string)($d['mark']??$cur['mark']??''));
+    if($effectiveMark==='') fail('Mark is required',422);
+    if($effectiveNo==='') fail('Invoice Number is required',422);
+    $dup=invoiceMarkDuplicate(db(),$effectiveNo,$effectiveMark,$id);
+    if($dup) fail('Invoice '.$effectiveNo.' already exists for Mark '.$effectiveMark,409);
     $effectiveGrade=trim((string)($d['grade']??$cur['grade']??''));
     $effectiveWeight=(float)($d['netWeightEach']??$cur['net_weight_each']??0);
     $gradeCheck=gradeStorageProfile(db(),$effectiveGrade,$effectiveWeight);
     if(empty($gradeCheck['valid'])) fail((string)$gradeCheck['error'],422);
-    $map=['invoiceYear'=>'invoice_year','mark'=>'mark','sellingMark'=>'selling_mark','grade'=>'grade','packingType'=>'packing_type','chestType'=>'chest_type','broker'=>'broker','buyer'=>'buyer','chests'=>'chests','weightPerChest'=>'weight_per_chest','netWeightEach'=>'net_weight_each','totalGrossWeight'=>'total_gross_weight','moistureContent'=>'moisture_content','mfdDate'=>'mfd_date','store'=>'store','date'=>'invoice_date','turnNo'=>'arrival_turn_no','arrivalTurnNo'=>'arrival_turn_no','vehicleNo'=>'arrival_vehicle_no','arrivalVehicleNo'=>'arrival_vehicle_no','driverName'=>'arrival_driver_name','arrivalDriverName'=>'arrival_driver_name','driverNic'=>'arrival_driver_nic','arrivalDriverNic'=>'arrival_driver_nic'];
+    $map=['invoiceYear'=>'invoice_year','invoiceNo'=>'invoice_no','mark'=>'mark','sellingMark'=>'selling_mark','grade'=>'grade','packingType'=>'packing_type','chestType'=>'chest_type','broker'=>'broker','buyer'=>'buyer','chests'=>'chests','weightPerChest'=>'weight_per_chest','netWeightEach'=>'net_weight_each','totalGrossWeight'=>'total_gross_weight','moistureContent'=>'moisture_content','mfdDate'=>'mfd_date','store'=>'store','date'=>'invoice_date','turnNo'=>'arrival_turn_no','arrivalTurnNo'=>'arrival_turn_no','vehicleNo'=>'arrival_vehicle_no','arrivalVehicleNo'=>'arrival_vehicle_no','driverName'=>'arrival_driver_name','arrivalDriverName'=>'arrival_driver_name','driverNic'=>'arrival_driver_nic','arrivalDriverNic'=>'arrival_driver_nic'];
     $sets=[];$params=[];
     foreach($map as $k=>$col){if(array_key_exists($k,$d)){$sets[]="$col=?";$val=$d[$k];$params[]=($val==='')?null:$val;}}
     foreach(['sampleDrawn'=>'sample_drawn','reprint'=>'reprint','exportable'=>'exportable','colourSeparated'=>'colour_separated'] as $k=>$col){if(array_key_exists($k,$d)){$sets[]="$col=?";$params[]=!empty($d[$k])?1:0;}}

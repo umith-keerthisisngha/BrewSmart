@@ -1,6 +1,6 @@
 -- =====================================================================
 -- BrewSmart - FULL DATABASE (Fresh Install + Lecturer Demo Data)
--- Version: 2026.3
+-- Version: 2026.4
 -- Database: brewsMart_db
 --
 -- USE:
@@ -23,7 +23,7 @@
 CREATE DATABASE IF NOT EXISTS brewsMart_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE brewsMart_db;
 SET FOREIGN_KEY_CHECKS=0;
-DROP TABLE IF EXISTS user_permissions,permission_catalog,audit_logs,location_blocks,ai_recommendations,invoice_ai_recommendations,invoice_location_allocations,invoice_stock_movements,gin_items,grn_items,activity_logs,role_permissions,system_settings,dispatches,gins,grns,warehouse_invoices,stock_movements,inventory_locations,tea_inventory,location_rules,warehouse_locations,warehouse_levels,racks,warehouses,suppliers,tea_auctions,buyers,brokers,tea_grades,tea_types,marks,packing_types,users;
+DROP TABLE IF EXISTS user_permissions,permission_catalog,audit_logs,location_blocks,ai_recommendations,invoice_ai_recommendations,invoice_location_allocations,invoice_stock_movements,gin_items,grn_items,activity_logs,role_permissions,system_settings,dispatches,gins,grns,warehouse_invoices,arrival_turns,stock_movements,inventory_locations,tea_inventory,location_rules,warehouse_locations,warehouse_levels,racks,warehouses,suppliers,tea_auctions,buyers,brokers,tea_grades,tea_types,marks,packing_types,users;
 SET FOREIGN_KEY_CHECKS=1;
 
 CREATE TABLE users (
@@ -35,6 +35,20 @@ CREATE TABLE users (
  role ENUM('ADMIN','MANAGER','WAREHOUSE_STAFF','BROKER') NOT NULL DEFAULT 'WAREHOUSE_STAFF',
  status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+CREATE TABLE arrival_turns (
+ turn_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+ turn_no VARCHAR(80) NOT NULL UNIQUE,
+ turn_date DATE NOT NULL,
+ store VARCHAR(180) NOT NULL DEFAULT 'BrewSmart Warehouse',
+ vehicle_no VARCHAR(60) NULL,
+ driver_name VARCHAR(120) NULL,
+ driver_nic VARCHAR(60) NULL,
+ created_by INT UNSIGNED NULL,
+ created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+ updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ FOREIGN KEY(created_by) REFERENCES users(user_id) ON DELETE SET NULL,
+ INDEX idx_arrival_turn_date(turn_date)
 ) ENGINE=InnoDB;
 CREATE TABLE racks (rack_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,rack_code VARCHAR(20) NOT NULL UNIQUE,rack_name VARCHAR(80) NOT NULL,status ENUM('ACTIVE','INACTIVE','MAINTENANCE') DEFAULT 'ACTIVE') ENGINE=InnoDB;
 CREATE TABLE warehouse_levels (level_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,rack_id INT UNSIGNED NOT NULL,level_number TINYINT UNSIGNED NOT NULL,UNIQUE KEY uq_rack_level(rack_id,level_number),FOREIGN KEY(rack_id) REFERENCES racks(rack_id) ON DELETE CASCADE) ENGINE=InnoDB;
@@ -53,7 +67,7 @@ CREATE TABLE stock_movements (movement_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY
 CREATE TABLE dispatches (dispatch_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,invoice_no VARCHAR(80) NOT NULL,buyer VARCHAR(150),delivery_order_no VARCHAR(80),bags INT UNSIGNED NOT NULL,vehicle_no VARCHAR(40),dispatch_date DATE NOT NULL,status ENUM('PENDING','DISPATCHED','CANCELLED') DEFAULT 'PENDING',created_by INT UNSIGNED NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(created_by) REFERENCES users(user_id) ON DELETE SET NULL) ENGINE=InnoDB;
 CREATE TABLE grns (grn_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,grn_no VARCHAR(80) NOT NULL UNIQUE,grn_date DATE NOT NULL,store VARCHAR(180),turn_no VARCHAR(80),vehicle_no VARCHAR(40),driver_name VARCHAR(120),driver_nic VARCHAR(60),supplier VARCHAR(150),source_type ENUM('BROKER','BUYER') NOT NULL DEFAULT 'BROKER',broker VARCHAR(150),buyer VARCHAR(150),mark VARCHAR(100),amalgamation TINYINT(1) NOT NULL DEFAULT 0,chests INT UNSIGNED DEFAULT 0,remarks TEXT,created_by INT UNSIGNED NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,FOREIGN KEY(created_by) REFERENCES users(user_id) ON DELETE SET NULL,INDEX(grn_date),INDEX(turn_no)) ENGINE=InnoDB;
 CREATE TABLE gins (gin_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,gin_no VARCHAR(80) NOT NULL UNIQUE,gin_date DATE NOT NULL,store VARCHAR(180),turn_no VARCHAR(80),buyer VARCHAR(150),collection_person VARCHAR(120),collection_nic VARCHAR(60),vehicle_no VARCHAR(60),sale_type VARCHAR(80),other_broker TINYINT(1) NOT NULL DEFAULT 0,remarks TEXT,invoice_no VARCHAR(80),chests INT UNSIGNED DEFAULT 0,dispatch_status ENUM('PENDING','DISPATCHED','CANCELLED') NOT NULL DEFAULT 'PENDING',gate_pass_no VARCHAR(80),gate_passed_at DATETIME NULL,gate_passed_by INT UNSIGNED NULL,created_by INT UNSIGNED NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,FOREIGN KEY(created_by) REFERENCES users(user_id) ON DELETE SET NULL,FOREIGN KEY(gate_passed_by) REFERENCES users(user_id) ON DELETE SET NULL,INDEX(gin_date),INDEX(turn_no),INDEX(dispatch_status),INDEX(gate_pass_no)) ENGINE=InnoDB;
-CREATE TABLE warehouse_invoices (invoice_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,invoice_year SMALLINT NOT NULL,invoice_no VARCHAR(80) NOT NULL UNIQUE,mark VARCHAR(100),selling_mark VARCHAR(100),grade VARCHAR(50),packing_type VARCHAR(100),chest_type VARCHAR(20),broker VARCHAR(150),buyer VARCHAR(150),chests INT UNSIGNED DEFAULT 0,weight_per_chest DECIMAL(10,2) DEFAULT 0,net_weight_each DECIMAL(10,2) DEFAULT NULL,total_net_weight DECIMAL(12,2) DEFAULT NULL,total_gross_weight DECIMAL(12,2) DEFAULT NULL,moisture_content DECIMAL(5,2) DEFAULT NULL,mfd_date DATE DEFAULT NULL,sample_drawn TINYINT(1) DEFAULT 0,reprint TINYINT(1) DEFAULT 0,exportable TINYINT(1) DEFAULT 0,colour_separated TINYINT(1) DEFAULT 0,store VARCHAR(100),invoice_date DATE NOT NULL,arrival_turn_no VARCHAR(80) NULL,arrival_vehicle_no VARCHAR(60) NULL,arrival_driver_name VARCHAR(120) NULL,arrival_driver_nic VARCHAR(60) NULL,location_id INT UNSIGNED NULL,location_code VARCHAR(30) NULL,allocation_score DECIMAL(5,2) NULL,allocation_model VARCHAR(50) NULL,allocation_explanation TEXT NULL,allocation_type VARCHAR(20) NULL,created_by INT UNSIGNED NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(created_by) REFERENCES users(user_id) ON DELETE SET NULL,FOREIGN KEY(location_id) REFERENCES warehouse_locations(location_id) ON DELETE SET NULL,INDEX(arrival_turn_no)) ENGINE=InnoDB;
+CREATE TABLE warehouse_invoices (invoice_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,invoice_year SMALLINT NOT NULL,invoice_no VARCHAR(80) NOT NULL,mark VARCHAR(100),selling_mark VARCHAR(100),grade VARCHAR(50),packing_type VARCHAR(100),chest_type VARCHAR(20),broker VARCHAR(150),buyer VARCHAR(150),chests INT UNSIGNED DEFAULT 0,weight_per_chest DECIMAL(10,2) DEFAULT 0,net_weight_each DECIMAL(10,2) DEFAULT NULL,total_net_weight DECIMAL(12,2) DEFAULT NULL,total_gross_weight DECIMAL(12,2) DEFAULT NULL,moisture_content DECIMAL(5,2) DEFAULT NULL,mfd_date DATE DEFAULT NULL,sample_drawn TINYINT(1) DEFAULT 0,reprint TINYINT(1) DEFAULT 0,exportable TINYINT(1) DEFAULT 0,colour_separated TINYINT(1) DEFAULT 0,store VARCHAR(100),invoice_date DATE NOT NULL,arrival_turn_no VARCHAR(80) NULL,arrival_vehicle_no VARCHAR(60) NULL,arrival_driver_name VARCHAR(120) NULL,arrival_driver_nic VARCHAR(60) NULL,location_id INT UNSIGNED NULL,location_code VARCHAR(30) NULL,allocation_score DECIMAL(5,2) NULL,allocation_model VARCHAR(50) NULL,allocation_explanation TEXT NULL,allocation_type VARCHAR(20) NULL,created_by INT UNSIGNED NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(created_by) REFERENCES users(user_id) ON DELETE SET NULL,FOREIGN KEY(location_id) REFERENCES warehouse_locations(location_id) ON DELETE SET NULL,UNIQUE KEY uq_invoice_mark_no(mark,invoice_no),INDEX(arrival_turn_no),INDEX idx_invoice_turn_broker(arrival_turn_no,broker)) ENGINE=InnoDB;
 
 CREATE TABLE grn_items (grn_item_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,grn_id BIGINT UNSIGNED NOT NULL,invoice_id BIGINT UNSIGNED NOT NULL,received_chests INT UNSIGNED NOT NULL,short_weight DECIMAL(12,2) NOT NULL DEFAULT 0,remarks VARCHAR(255),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY uq_grn_invoice(invoice_id),FOREIGN KEY(grn_id) REFERENCES grns(grn_id) ON DELETE CASCADE,FOREIGN KEY(invoice_id) REFERENCES warehouse_invoices(invoice_id),INDEX(grn_id)) ENGINE=InnoDB;
 CREATE TABLE gin_items (gin_item_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,gin_id BIGINT UNSIGNED NOT NULL,invoice_id BIGINT UNSIGNED NOT NULL,location_id INT UNSIGNED NOT NULL,chests_issued INT UNSIGNED NOT NULL,net_weight_each DECIMAL(10,2) NOT NULL DEFAULT 0,weight_issued DECIMAL(12,2) NOT NULL DEFAULT 0,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(gin_id) REFERENCES gins(gin_id) ON DELETE CASCADE,FOREIGN KEY(invoice_id) REFERENCES warehouse_invoices(invoice_id),FOREIGN KEY(location_id) REFERENCES warehouse_locations(location_id),INDEX(gin_id),INDEX(invoice_id),INDEX(location_id)) ENGINE=InnoDB;
