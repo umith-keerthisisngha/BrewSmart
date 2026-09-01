@@ -1,4 +1,4 @@
-# BrewSmart — AI-Based Smart Tea Warehouse Management & Optimization System
+# BrewSmart: AI-Assisted Smart Tea Warehouse Management and Optimization System
 
 BrewSmart is a full-stack tea warehouse operations system built for broker-led receiving, GRN, location allocation, stock inquiry, GIN/Gate Pass dispatch, reporting and user-level access control.
 
